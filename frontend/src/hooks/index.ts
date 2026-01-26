@@ -33,3 +33,5 @@ export { useOrganizationInvitations } from './useOrganizationInvitations';
 export { useOrganizationMutations } from './useOrganizationMutations';
 export { useVariant } from './useVariant';
 export { useRetryProcess } from './useRetryProcess';
+export { useProjectStories } from './useProjectStories';
+export { useStoryTasks } from './useStoryTasks';
