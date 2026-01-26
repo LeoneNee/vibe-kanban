@@ -48,6 +48,7 @@ import TaskKanbanBoard, {
 } from '@/components/tasks/TaskKanbanBoard';
 import type { DragEndEvent } from '@/components/ui/shadcn-io/kanban';
 import { useProjectTasks } from '@/hooks/useProjectTasks';
+import { useStoryTasks } from '@/hooks/useStoryTasks';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useHotkeysContext } from 'react-hotkeys-hook';
 import { TasksLayout, type LayoutMode } from '@/components/layout/TasksLayout';
@@ -129,10 +130,11 @@ function DiffsPanelContainer({
 
 export function ProjectTasks() {
   const { t } = useTranslation(['tasks', 'common']);
-  const { taskId, attemptId } = useParams<{
+  const { taskId, attemptId, storyId } = useParams<{
     projectId: string;
     taskId?: string;
     attemptId?: string;
+    storyId?: string;
   }>();
   const navigate = useNavigate();
   const { enableScope, disableScope, activeScopes } = useHotkeysContext();
@@ -157,17 +159,27 @@ export function ProjectTasks() {
 
   const handleCreateTask = useCallback(() => {
     if (projectId) {
-      openTaskForm({ mode: 'create', projectId });
+      openTaskForm({
+        mode: 'create',
+        projectId,
+        taskType: storyId ? 'task' : undefined,
+        parentTaskId: storyId || undefined,
+      });
     }
-  }, [projectId]);
+  }, [projectId, storyId]);
   const { query: searchQuery, focusInput } = useSearch();
+
+  const projectTasksResult = useProjectTasks(projectId || '');
+  const storyTasksResult = useStoryTasks(storyId || '', projectId || '', {
+    enabled: !!storyId && !!projectId,
+  });
 
   const {
     tasks,
     tasksById,
     isLoading,
     error: streamError,
-  } = useProjectTasks(projectId || '');
+  } = storyId ? storyTasksResult : projectTasksResult;
 
   const selectedTask = useMemo(
     () => (taskId ? (tasksById[taskId] ?? null) : null),

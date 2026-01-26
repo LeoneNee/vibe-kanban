@@ -64,7 +64,7 @@ interface Task {
 }
 
 export type TaskFormDialogProps =
-  | { mode: 'create'; projectId: string }
+  | { mode: 'create'; projectId: string; taskType?: TaskType; parentTaskId?: string }
   | { mode: 'edit'; projectId: string; task: Task }
   | { mode: 'duplicate'; projectId: string; initialTask: Task }
   | {
@@ -189,9 +189,13 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
         title: value.title,
         description: value.description,
         status: null,
-        task_type: 'task' as TaskType,
+        task_type: (mode === 'create' && props.taskType) ? props.taskType : ('task' as TaskType),
         parent_workspace_id:
-          mode === 'subtask' ? props.parentTaskAttemptId : null,
+          mode === 'subtask'
+            ? props.parentTaskAttemptId
+            : mode === 'create' && props.parentTaskId
+              ? props.parentTaskId
+              : null,
         image_ids: imageIds,
       };
       const shouldAutoStart = value.autoStart && !forceCreateOnlyRef.current;
