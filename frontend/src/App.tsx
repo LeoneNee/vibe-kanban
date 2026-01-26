@@ -4,6 +4,7 @@ import { I18nextProvider } from 'react-i18next';
 import i18n from '@/i18n';
 import { Projects } from '@/pages/Projects';
 import { ProjectTasks } from '@/pages/ProjectTasks';
+import { ProjectStories } from '@/pages/ProjectStories';
 import { FullAttemptLogsPage } from '@/pages/FullAttemptLogs';
 import { NormalLayout } from '@/components/layout/NormalLayout';
 import { NewDesignLayout } from '@/components/layout/NewDesignLayout';
@@ -155,6 +156,10 @@ function AppContent() {
                 path="/projects/:projectId/tasks"
                 element={<ProjectTasks />}
               />
+              <Route
+                path="/projects/:projectId/stories"
+                element={<ProjectStories />}
+              />
               <Route path="/settings/*" element={<SettingsLayout />}>
                 <Route index element={<Navigate to="general" replace />} />
                 <Route path="general" element={<GeneralSettings />} />
@@ -174,6 +179,10 @@ function AppContent() {
               <Route
                 path="/projects/:projectId/tasks/:taskId"
                 element={<ProjectTasks />}
+              />
+              <Route
+                path="/projects/:projectId/stories/:storyId/tasks"
+                element={<ProjectStories />}
               />
               <Route
                 path="/projects/:projectId/tasks/:taskId/attempts/:attemptId"

@@ -30,15 +30,16 @@ export function SearchProvider({ children }: SearchProviderProps) {
   const { projectId } = useParams<{ projectId: string }>();
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Check if we're on a tasks route
-  const isTasksRoute = /^\/projects\/[^/]+\/tasks/.test(location.pathname);
+  // Check if we're on a searchable route (tasks or stories)
+  const isSearchRoute =
+    /^\/projects\/[^/]+\/(tasks|stories)/.test(location.pathname);
 
-  // Clear search when leaving tasks pages
+  // Clear search when leaving searchable pages
   useEffect(() => {
-    if (!isTasksRoute && query !== '') {
+    if (!isSearchRoute && query !== '') {
       setQuery('');
     }
-  }, [isTasksRoute, query]);
+  }, [isSearchRoute, query]);
 
   // Clear search when project changes
   useEffect(() => {
@@ -48,7 +49,7 @@ export function SearchProvider({ children }: SearchProviderProps) {
   const clear = () => setQuery('');
 
   const focusInput = () => {
-    if (inputRef.current && isTasksRoute) {
+    if (inputRef.current && isSearchRoute) {
       inputRef.current.focus();
     }
   };
@@ -60,7 +61,7 @@ export function SearchProvider({ children }: SearchProviderProps) {
   const value: SearchState = {
     query,
     setQuery,
-    active: isTasksRoute,
+    active: isSearchRoute,
     clear,
     focusInput,
     registerInputRef,
