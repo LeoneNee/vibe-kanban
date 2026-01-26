@@ -49,6 +49,8 @@ import type {
   TaskStatus,
   ExecutorProfileId,
   ImageResponse,
+  CreateTask,
+  TaskType,
 } from 'shared/types';
 
 interface Task {
@@ -172,6 +174,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
             title: value.title,
             description: value.description,
             status: value.status,
+            task_type: 'task',
             parent_workspace_id: null,
             image_ids: images.length > 0 ? images.map((img) => img.id) : null,
           },
@@ -181,15 +184,15 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
     } else {
       const imageIds =
         newlyUploadedImageIds.length > 0 ? newlyUploadedImageIds : null;
-      const task = {
+      const task: CreateTask = {
         project_id: projectId,
         title: value.title,
         description: value.description,
         status: null,
+        task_type: 'task' as TaskType,
         parent_workspace_id:
           mode === 'subtask' ? props.parentTaskAttemptId : null,
         image_ids: imageIds,
-        shared_task_id: null,
       };
       const shouldAutoStart = value.autoStart && !forceCreateOnlyRef.current;
       if (shouldAutoStart) {
