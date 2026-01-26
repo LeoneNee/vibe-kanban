@@ -26,6 +26,7 @@ import {
   SearchResult,
   Task,
   TaskRelationships,
+  TaskType,
   Tag,
   TagSearchParams,
   TaskWithAttemptStatus,
@@ -362,6 +363,25 @@ export const projectsApi = {
 
 // Task Management APIs
 export const tasksApi = {
+  list: async (params: {
+    projectId: string;
+    taskType?: TaskType;
+    parentTaskId?: string;
+  }): Promise<Task[]> => {
+    const queryParams = new URLSearchParams();
+    queryParams.set('project_id', params.projectId);
+
+    if (params.taskType) {
+      queryParams.set('task_type', params.taskType);
+    }
+    if (params.parentTaskId) {
+      queryParams.set('parent_task_id', params.parentTaskId);
+    }
+
+    const response = await makeRequest(`/api/tasks?${queryParams.toString()}`);
+    return handleApiResponse<Task[]>(response);
+  },
+
   getById: async (taskId: string): Promise<Task> => {
     const response = await makeRequest(`/api/tasks/${taskId}`);
     return handleApiResponse<Task>(response);
