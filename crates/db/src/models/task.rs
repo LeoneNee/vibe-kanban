@@ -210,6 +210,43 @@ ORDER BY t.created_at DESC"#,
         Ok(tasks)
     }
 
+    pub async fn list_tasks(
+        pool: &SqlitePool,
+        project_id: Uuid,
+        task_type_filter: Option<TaskType>,
+        parent_task_id_filter: Option<Option<Uuid>>,
+    ) -> Result<Vec<Task>, sqlx::Error> {
+        let mut query = String::from(
+            "SELECT id, project_id, title, description, status, task_type, parent_workspace_id, created_at, updated_at FROM tasks WHERE project_id = ?1",
+        );
+
+        if task_type_filter.is_some() {
+            query.push_str(" AND task_type = ?2");
+        }
+
+        if let Some(parent_filter) = &parent_task_id_filter {
+            if parent_filter.is_none() {
+                query.push_str(" AND parent_workspace_id IS NULL");
+            } else {
+                query.push_str(" AND parent_workspace_id = ?3");
+            }
+        }
+
+        query.push_str(" ORDER BY created_at DESC");
+
+        let mut q = sqlx::query_as::<_, Task>(&query).bind(project_id);
+
+        if let Some(tt) = task_type_filter {
+            q = q.bind(tt);
+        }
+
+        if let Some(Some(parent_id)) = parent_task_id_filter {
+            q = q.bind(parent_id);
+        }
+
+        q.fetch_all(pool).await
+    }
+
     pub async fn find_by_id(pool: &SqlitePool, id: Uuid) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
