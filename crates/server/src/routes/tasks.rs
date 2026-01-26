@@ -15,7 +15,7 @@ use axum::{
 use db::models::{
     image::TaskImage,
     repo::{Repo, RepoError},
-    task::{CreateTask, Task, TaskWithAttemptStatus, UpdateTask},
+    task::{CreateTask, Task, TaskType, TaskWithAttemptStatus, UpdateTask},
     workspace::{CreateWorkspace, Workspace},
     workspace_repo::{CreateWorkspaceRepo, WorkspaceRepo},
 };
@@ -39,13 +39,28 @@ pub struct TaskQuery {
     pub project_id: Uuid,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListTasksQuery {
+    pub project_id: Uuid,
+    pub task_type: Option<TaskType>,
+    pub parent_task_id: Option<Uuid>,
+}
+
 pub async fn get_tasks(
     State(deployment): State<DeploymentImpl>,
-    Query(query): Query<TaskQuery>,
-) -> Result<ResponseJson<ApiResponse<Vec<TaskWithAttemptStatus>>>, ApiError> {
-    let tasks =
-        Task::find_by_project_id_with_attempt_status(&deployment.db().pool, query.project_id)
-            .await?;
+    Query(query): Query<ListTasksQuery>,
+) -> Result<ResponseJson<ApiResponse<Vec<Task>>>, ApiError> {
+    // Convert parent_task_id to the filter format expected by list_tasks
+    // None = no filter, Some(None) = filter for NULL, Some(Some(id)) = filter for specific id
+    let parent_filter = query.parent_task_id.map(Some);
+
+    let tasks = Task::list_tasks(
+        &deployment.db().pool,
+        query.project_id,
+        query.task_type,
+        parent_filter,
+    )
+    .await?;
 
     Ok(ResponseJson(ApiResponse::success(tasks)))
 }
@@ -108,6 +123,24 @@ pub async fn create_task(
     State(deployment): State<DeploymentImpl>,
     Json(payload): Json<CreateTask>,
 ) -> Result<ResponseJson<ApiResponse<Task>>, ApiError> {
+    // Validate task_type and parent_workspace_id relationship
+    match payload.task_type {
+        TaskType::Story => {
+            if payload.parent_workspace_id.is_some() {
+                return Err(ApiError::BadRequest(
+                    "Story cannot have a parent_workspace_id".to_string(),
+                ));
+            }
+        }
+        TaskType::Task => {
+            if payload.parent_workspace_id.is_none() {
+                return Err(ApiError::BadRequest(
+                    "Task must have a parent_workspace_id".to_string(),
+                ));
+            }
+        }
+    }
+
     let id = Uuid::new_v4();
 
     tracing::debug!(
@@ -152,6 +185,24 @@ pub async fn create_task_and_start(
         return Err(ApiError::BadRequest(
             "At least one repository is required".to_string(),
         ));
+    }
+
+    // Validate task_type and parent_workspace_id relationship
+    match payload.task.task_type {
+        TaskType::Story => {
+            if payload.task.parent_workspace_id.is_some() {
+                return Err(ApiError::BadRequest(
+                    "Story cannot have a parent_workspace_id".to_string(),
+                ));
+            }
+        }
+        TaskType::Task => {
+            if payload.task.parent_workspace_id.is_none() {
+                return Err(ApiError::BadRequest(
+                    "Task must have a parent_workspace_id".to_string(),
+                ));
+            }
+        }
     }
 
     let pool = &deployment.db().pool;
