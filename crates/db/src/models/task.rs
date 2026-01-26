@@ -6,21 +6,16 @@ use ts_rs::TS;
 use uuid::Uuid;
 
 use super::{project::Project, workspace::Workspace};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "ts-rs", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts-rs", ts(export))]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Type, Serialize, Deserialize, TS, Default,
+)]
 #[sqlx(type_name = "TEXT", rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
+#[ts(export)]
 pub enum TaskType {
     Story,
+    #[default]
     Task,
-}
-
-impl Default for TaskType {
-    fn default() -> Self {
-        TaskType::Task
-    }
 }
 
 #[derive(
