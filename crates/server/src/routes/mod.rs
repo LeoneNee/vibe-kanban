@@ -24,6 +24,7 @@ pub mod scratch;
 pub mod sessions;
 pub mod tags;
 pub mod task_attempts;
+pub mod task_docs;
 pub mod tasks;
 pub mod terminal;
 

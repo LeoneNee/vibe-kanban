@@ -24,6 +24,7 @@ use executors::profile::ExecutorProfileId;
 use futures_util::{SinkExt, StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use services::services::{container::ContainerService, workspace_manager::WorkspaceManager};
+use services::task_doc::generate_task_doc;
 use sqlx::Error as SqlxError;
 use ts_rs::TS;
 use utils::response::ApiResponse;
@@ -31,7 +32,7 @@ use uuid::Uuid;
 
 use crate::{
     DeploymentImpl, error::ApiError, middleware::load_task_middleware,
-    routes::task_attempts::WorkspaceRepoInput,
+    routes::{task_attempts::WorkspaceRepoInput, task_docs},
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -167,6 +168,27 @@ pub async fn create_task(
         )
         .await;
 
+    // Generate task doc for Task-type tasks (Stories skip - no workspace/repo available yet)
+    if task.task_type == TaskType::Task {
+        if let Some(parent_workspace_id) = task.parent_workspace_id {
+            let pool = &deployment.db().pool;
+            // Get repos from parent workspace
+            let repos = WorkspaceRepo::find_repos_for_workspace(pool, parent_workspace_id).await;
+            if let Ok(repos) = repos {
+                if let Some(first_repo) = repos.first() {
+                    // Get parent story from workspace's task
+                    if let Ok(Some(parent_workspace)) = Workspace::find_by_id(pool, parent_workspace_id).await {
+                        if let Ok(Some(parent_story)) = Task::find_by_id(pool, parent_workspace.task_id).await {
+                            if let Err(e) = generate_task_doc(&task, Some(&parent_story), &first_repo.path).await {
+                                tracing::warn!("Failed to generate task doc for task {}: {}", task.id, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Ok(ResponseJson(ApiResponse::success(task)))
 }
 
@@ -264,6 +286,33 @@ pub async fn create_task_and_start(
         })
         .collect();
     WorkspaceRepo::create_many(&deployment.db().pool, workspace.id, &workspace_repos).await?;
+
+    // Generate task doc after workspace repos are created
+    // Get the first repo's path for doc generation
+    if let Some(first_repo_input) = payload.repos.first() {
+        if let Ok(Some(first_repo)) = Repo::find_by_id(pool, first_repo_input.repo_id).await {
+            match task.task_type {
+                TaskType::Story => {
+                    // For Story tasks: generate with no parent
+                    if let Err(e) = generate_task_doc(&task, None, &first_repo.path).await {
+                        tracing::warn!("Failed to generate task doc for story {}: {}", task.id, e);
+                    }
+                }
+                TaskType::Task => {
+                    // For Task tasks: need to get parent story via parent_workspace_id
+                    if let Some(parent_workspace_id) = task.parent_workspace_id {
+                        if let Ok(Some(parent_workspace)) = Workspace::find_by_id(pool, parent_workspace_id).await {
+                            if let Ok(Some(parent_story)) = Task::find_by_id(pool, parent_workspace.task_id).await {
+                                if let Err(e) = generate_task_doc(&task, Some(&parent_story), &first_repo.path).await {
+                                    tracing::warn!("Failed to generate task doc for task {}: {}", task.id, e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     let is_attempt_running = deployment
         .container()
@@ -447,6 +496,10 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
 
     let task_id_router = Router::new()
         .route("/", get(get_task))
+        .route(
+            "/doc",
+            get(task_docs::get_task_doc).patch(task_docs::update_task_doc),
+        )
         .merge(task_actions_router)
         .layer(from_fn_with_state(deployment.clone(), load_task_middleware));
 

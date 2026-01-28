@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use std::io;
+use std::path::{Path, PathBuf};
 
 pub fn slugify(s: &str) -> String {
     s.to_lowercase()
@@ -429,5 +429,196 @@ mod generation_tests {
         // Should not error, paths should be same
         assert_eq!(path1, path2);
         assert!(path1.exists());
+    }
+}
+
+/// Update or add a section in a markdown document
+pub fn update_doc_section(
+    doc_content: &str,
+    section_header: &str,
+    new_content: &str,
+) -> Result<String, String> {
+    // If section doesn't exist, append at end
+    if !doc_content.contains(section_header) {
+        return Ok(format!(
+            "{}\n\n{}\n\n{}",
+            doc_content.trim_end(),
+            section_header,
+            new_content
+        ));
+    }
+
+    // Replace section content
+    let lines: Vec<&str> = doc_content.lines().collect();
+    let mut result = Vec::new();
+    let mut in_target_section = false;
+    let mut section_updated = false;
+
+    for line in lines {
+        if line.starts_with("## ") {
+            if line == section_header {
+                in_target_section = true;
+                result.push(line);
+                result.push("");
+                result.push(new_content);
+                section_updated = true;
+            } else {
+                in_target_section = false;
+                result.push(line);
+            }
+        } else if !in_target_section || !section_updated {
+            result.push(line);
+        }
+    }
+
+    Ok(result.join("\n"))
+}
+
+/// Append a new entry to the changelog section
+pub fn append_to_changelog(doc_content: &str, new_entry: &str) -> Result<String, String> {
+    let section_header = "## 更新日志";
+
+    if !doc_content.contains(section_header) {
+        return update_doc_section(doc_content, section_header, new_entry);
+    }
+
+    // Find changelog section and append
+    let lines: Vec<&str> = doc_content.lines().collect();
+    let mut result = Vec::new();
+    let mut in_changelog = false;
+    let mut appended = false;
+
+    for (i, line) in lines.iter().enumerate() {
+        result.push(*line);
+
+        if line.starts_with("## ") {
+            if *line == section_header {
+                in_changelog = true;
+            } else if in_changelog && !appended {
+                // Reached next section, insert before it
+                result.pop();
+                result.push(new_entry);
+                result.push("");
+                result.push(*line);
+                appended = true;
+                in_changelog = false;
+            } else {
+                in_changelog = false;
+            }
+        }
+
+        // If last line and still in changelog
+        if in_changelog && i == lines.len() - 1 && !appended {
+            result.push(new_entry);
+            appended = true;
+        }
+    }
+
+    Ok(result.join("\n"))
+}
+
+/// Convert DocSection enum variant name to Chinese section header
+pub fn section_header_from_doc_section(section: &str) -> &'static str {
+    match section {
+        "api_spec" => "## API 规格",
+        "test_cases" => "## 测试用例",
+        "dependencies" => "## 依赖和风险",
+        "changelog" => "## 更新日志",
+        "implementation_hints" => "## 实现要点",
+        _ => "## 未知章节",
+    }
+}
+
+#[cfg(test)]
+mod section_update_tests {
+    use super::*;
+
+    #[test]
+    fn test_update_existing_section() {
+        let doc = r#"# Task: Test
+
+## 基本信息
+- ID: 123
+
+## 实现要点
+Old content
+
+## 更新日志
+- Log entry
+"#;
+
+        let updated = update_doc_section(doc, "## 实现要点", "New content").unwrap();
+
+        assert!(updated.contains("New content"));
+        assert!(!updated.contains("Old content"));
+        assert!(updated.contains("## 更新日志"));
+    }
+
+    #[test]
+    fn test_add_new_section() {
+        let doc = r#"# Task: Test
+
+## 基本信息
+- ID: 123
+"#;
+
+        let updated = update_doc_section(doc, "## API 规格", "API content").unwrap();
+
+        assert!(updated.contains("## API 规格"));
+        assert!(updated.contains("API content"));
+    }
+
+    #[test]
+    fn test_append_to_changelog() {
+        let doc = r#"# Task: Test
+
+## 更新日志
+- [2026-01-28] Initial
+"#;
+
+        let updated = append_to_changelog(doc, "- [2026-01-29] Updated").unwrap();
+
+        assert!(updated.contains("- [2026-01-28] Initial"));
+        assert!(updated.contains("- [2026-01-29] Updated"));
+    }
+
+    #[test]
+    fn test_append_to_changelog_with_next_section() {
+        let doc = r#"# Task: Test
+
+## 更新日志
+- [2026-01-28] Initial
+
+## 其他章节
+Some content
+"#;
+
+        let updated = append_to_changelog(doc, "- [2026-01-29] Updated").unwrap();
+
+        assert!(updated.contains("- [2026-01-28] Initial"));
+        assert!(updated.contains("- [2026-01-29] Updated"));
+        assert!(updated.contains("## 其他章节"));
+        // Verify the new entry comes before the next section
+        let changelog_pos = updated.find("## 更新日志").unwrap();
+        let new_entry_pos = updated.find("- [2026-01-29] Updated").unwrap();
+        let next_section_pos = updated.find("## 其他章节").unwrap();
+        assert!(new_entry_pos > changelog_pos);
+        assert!(new_entry_pos < next_section_pos);
+    }
+
+    #[test]
+    fn test_section_header_from_doc_section() {
+        assert_eq!(section_header_from_doc_section("api_spec"), "## API 规格");
+        assert_eq!(section_header_from_doc_section("test_cases"), "## 测试用例");
+        assert_eq!(
+            section_header_from_doc_section("dependencies"),
+            "## 依赖和风险"
+        );
+        assert_eq!(section_header_from_doc_section("changelog"), "## 更新日志");
+        assert_eq!(
+            section_header_from_doc_section("implementation_hints"),
+            "## 实现要点"
+        );
+        assert_eq!(section_header_from_doc_section("unknown"), "## 未知章节");
     }
 }
