@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::io;
 
 pub fn slugify(s: &str) -> String {
     s.to_lowercase()
@@ -319,5 +320,114 @@ mod template_tests {
         let hints = extract_implementation_hints(description.as_deref());
 
         assert_eq!(hints, "<!-- 待 Brainstorm 时补充 -->");
+    }
+}
+
+/// Generate documentation file for a task (Story or Task)
+///
+/// Creates the directory structure and writes the markdown file.
+pub async fn generate_task_doc(
+    task: &db::models::task::Task,
+    story: Option<&db::models::task::Task>,
+    repo_root: &Path,
+) -> io::Result<PathBuf> {
+    use db::models::task::TaskType;
+
+    let doc_path = get_task_doc_path(task, story, repo_root);
+
+    // Create parent directory if it doesn't exist
+    if let Some(parent) = doc_path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+
+    // Generate content based on task type
+    let content = match task.task_type {
+        TaskType::Story => generate_story_doc_template(task),
+        TaskType::Task => {
+            let story = story.expect("Task must have parent story");
+            generate_task_doc_template(task, story)
+        }
+    };
+
+    // Write to file
+    tokio::fs::write(&doc_path, content).await?;
+
+    Ok(doc_path)
+}
+
+#[cfg(test)]
+mod generation_tests {
+    use super::*;
+    use tempfile::TempDir;
+    use db::models::task::TaskType;
+    use uuid::Uuid;
+
+    // Reuse mock_task from path_tests
+    use super::path_tests::mock_task;
+
+    #[tokio::test]
+    async fn test_generate_story_doc_creates_directory_and_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+
+        let story = mock_task(
+            Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap(),
+            "User Auth",
+            TaskType::Story
+        );
+
+        let doc_path = generate_task_doc(&story, None, repo_root).await.unwrap();
+
+        assert!(doc_path.exists());
+        assert_eq!(
+            doc_path,
+            repo_root.join("docs/stories/123e4567-e89b-12d3-a456-426614174000-user-auth/README.md")
+        );
+
+        let content = tokio::fs::read_to_string(&doc_path).await.unwrap();
+        assert!(content.contains("# Story: User Auth"));
+    }
+
+    #[tokio::test]
+    async fn test_generate_task_doc_creates_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+
+        // First create the story doc (creates directory)
+        let story = mock_task(
+            Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap(),
+            "User Auth",
+            TaskType::Story
+        );
+        generate_task_doc(&story, None, repo_root).await.unwrap();
+
+        // Now create task doc
+        let task = mock_task(
+            Uuid::parse_str("456e7890-e89b-12d3-a456-426614174111").unwrap(),
+            "Login API",
+            TaskType::Task
+        );
+        let doc_path = generate_task_doc(&task, Some(&story), repo_root).await.unwrap();
+
+        assert!(doc_path.exists());
+
+        let content = tokio::fs::read_to_string(&doc_path).await.unwrap();
+        assert!(content.contains("# Task: Login API"));
+    }
+
+    #[tokio::test]
+    async fn test_generate_task_doc_idempotent() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+
+        let story = mock_task(Uuid::new_v4(), "User Auth", TaskType::Story);
+
+        // Generate twice
+        let path1 = generate_task_doc(&story, None, repo_root).await.unwrap();
+        let path2 = generate_task_doc(&story, None, repo_root).await.unwrap();
+
+        // Should not error, paths should be same
+        assert_eq!(path1, path2);
+        assert!(path1.exists());
     }
 }
