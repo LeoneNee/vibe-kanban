@@ -5,6 +5,8 @@ import i18n from '@/i18n';
 import { Projects } from '@/pages/Projects';
 import { ProjectTasks } from '@/pages/ProjectTasks';
 import { ProjectStories } from '@/pages/ProjectStories';
+import { StoryBrainstormLaunch } from '@/pages/StoryBrainstormLaunch';
+import { TaskBrainstormLaunch } from '@/pages/TaskBrainstormLaunch';
 import { FullAttemptLogsPage } from '@/pages/FullAttemptLogs';
 import { NormalLayout } from '@/components/layout/NormalLayout';
 import { NewDesignLayout } from '@/components/layout/NewDesignLayout';
@@ -48,7 +50,7 @@ import { ElectricTestPage } from '@/pages/ui-new/ElectricTestPage';
 
 const SentryRoutes = Sentry.withSentryReactRouterV6Routing(Routes);
 
-function AppContent() {
+export function AppContent() {
   const { config, analyticsUserId, updateAndSaveConfig } = useUserSystem();
   const posthog = usePostHog();
   const { isSignedIn } = useAuth();
@@ -151,7 +153,10 @@ function AppContent() {
             >
               <Route path="/" element={<Projects />} />
               <Route path="/projects" element={<Projects />} />
-              <Route path="/projects/:projectId" element={<Projects />} />
+              <Route
+                path="/projects/:projectId"
+                element={<Navigate to=":projectId/stories" replace />}
+              />
               <Route
                 path="/projects/:projectId/tasks"
                 element={<ProjectTasks />}
@@ -159,6 +164,14 @@ function AppContent() {
               <Route
                 path="/projects/:projectId/stories"
                 element={<ProjectStories />}
+              />
+              <Route
+                path="/projects/:projectId/stories/brainstorm"
+                element={<StoryBrainstormLaunch />}
+              />
+              <Route
+                path="/projects/:projectId/stories/:storyId/tasks/:taskId/brainstorm"
+                element={<TaskBrainstormLaunch />}
               />
               <Route path="/settings/*" element={<SettingsLayout />}>
                 <Route index element={<Navigate to="general" replace />} />
@@ -182,6 +195,14 @@ function AppContent() {
               />
               <Route
                 path="/projects/:projectId/stories/:storyId/tasks"
+                element={<ProjectTasks />}
+              />
+              <Route
+                path="/projects/:projectId/stories/:storyId/tasks/:taskId"
+                element={<ProjectTasks />}
+              />
+              <Route
+                path="/projects/:projectId/stories/:storyId/tasks/:taskId/attempts/:attemptId"
                 element={<ProjectTasks />}
               />
               <Route
