@@ -419,6 +419,23 @@ export const tasksApi = {
     });
     return handleApiResponse<void>(response);
   },
+
+  getDoc: async (taskId: string): Promise<string> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/doc`);
+    return handleApiResponse<string>(response);
+  },
+
+  updateDoc: async (
+    taskId: string,
+    section: 'api_spec' | 'test_cases' | 'dependencies' | 'changelog' | 'implementation_hints',
+    content: string
+  ): Promise<void> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/doc`, {
+      method: 'PATCH',
+      body: JSON.stringify({ section, content }),
+    });
+    return handleApiResponse<void>(response);
+  },
 };
 
 // Sessions API
