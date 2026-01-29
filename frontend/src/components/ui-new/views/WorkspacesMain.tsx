@@ -12,6 +12,8 @@ import { EntriesProvider } from '@/contexts/EntriesContext';
 import { MessageEditProvider } from '@/contexts/MessageEditContext';
 import { RetryUiProvider } from '@/contexts/RetryUiContext';
 import { ApprovalFeedbackProvider } from '@/contexts/ApprovalFeedbackContext';
+import { ExtractStoriesButton } from '@/components/workspace/ExtractStoriesButton';
+import { SaveBrainstormResultButton } from '@/components/workspace/SaveBrainstormResultButton';
 
 export type { ConversationListHandle };
 
@@ -125,6 +127,15 @@ export function WorkspacesMain({
               />
             </div>
           </MessageEditProvider>
+          {/* Extract Stories button for brainstorm workspaces */}
+          {workspaceWithSession && (
+            <ExtractStoriesButton workspaceWithSession={workspaceWithSession} />
+          )}
+          {workspaceWithSession && (
+            <SaveBrainstormResultButton
+              workspaceWithSession={workspaceWithSession}
+            />
+          )}
         </EntriesProvider>
       </ApprovalFeedbackProvider>
       {/* Context Bar - floating toolbar */}
