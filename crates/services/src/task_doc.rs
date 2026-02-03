@@ -2,14 +2,22 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 pub fn slugify(s: &str) -> String {
-    s.to_lowercase()
+    let slug = s
+        .to_lowercase()
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect::<String>()
         .split('-')
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
-        .join("-")
+        .join("-");
+
+    // 如果 slug 为空（如纯中文标题），使用 fallback
+    if slug.is_empty() {
+        format!("task-{}", &uuid::Uuid::new_v4().to_string()[..8])
+    } else {
+        slug
+    }
 }
 
 /// Compute the documentation file path for a task.
@@ -67,7 +75,22 @@ mod tests {
 
     #[test]
     fn test_slugify_chinese() {
+        // 中英混合：保留英文部分
         assert_eq!(slugify("用户登录 API"), "api");
+    }
+
+    #[test]
+    fn test_slugify_chinese_only() {
+        // 纯中文标题应该生成 fallback slug
+        let result = slugify("用户登录功能");
+        assert!(!result.is_empty(), "slug should not be empty for Chinese-only titles");
+        assert!(result.starts_with("task-"), "Chinese-only slug should use fallback prefix");
+    }
+
+    #[test]
+    fn test_slugify_mixed_chinese_english() {
+        // 中英混合应该保留英文部分
+        assert_eq!(slugify("用户 Login API"), "login-api");
     }
 }
 
@@ -87,6 +110,7 @@ mod path_tests {
             status: TaskStatus::Todo,
             task_type,
             parent_workspace_id: None,
+            parent_task_id: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
