@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Save, Check } from 'lucide-react';
+import { Save, Check, AlertCircle } from 'lucide-react';
 import { useEntries } from '@/contexts/EntriesContext';
 import { useTask } from '@/hooks/useTask';
 import { Button } from '@/components/ui/button';
@@ -43,6 +43,7 @@ export function SaveBrainstormResultButton({
   const { data: task } = useTask(workspaceWithSession?.task_id);
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Only show for task brainstorm workspaces
   const isBrainstormTask =
@@ -63,6 +64,7 @@ export function SaveBrainstormResultButton({
     if (!markdownContent || !task?.parent_task_id) return;
 
     setIsSaving(true);
+    setError(null);
     try {
       await tasksApi.updateDoc(
         task.parent_task_id,
@@ -71,6 +73,8 @@ export function SaveBrainstormResultButton({
       );
       setSaved(true);
     } catch (err) {
+      const message = err instanceof Error ? err.message : '保存失败，请重试';
+      setError(message);
       console.error('Failed to save brainstorm result:', err);
     } finally {
       setIsSaving(false);
@@ -81,23 +85,29 @@ export function SaveBrainstormResultButton({
     <Button
       onClick={handleSave}
       disabled={isSaving || saved}
+      variant={error ? 'destructive' : 'default'}
       className="fixed bottom-6 right-6 z-50 shadow-lg"
       size="lg"
     >
       {saved ? (
         <>
           <Check className="mr-2 h-5 w-5" />
-          Saved!
+          已保存
+        </>
+      ) : error ? (
+        <>
+          <AlertCircle className="mr-2 h-5 w-5" />
+          重试保存
         </>
       ) : isSaving ? (
         <>
           <span className="mr-2 h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent inline-block" />
-          Saving...
+          保存中...
         </>
       ) : (
         <>
           <Save className="mr-2 h-5 w-5" />
-          Save to Task Doc
+          保存到任务文档
         </>
       )}
     </Button>
