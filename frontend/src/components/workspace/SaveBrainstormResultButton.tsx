@@ -11,7 +11,7 @@ interface SaveBrainstormResultButtonProps {
 }
 
 function extractMarkdownContent(entries: any[]): string | null {
-  // Look for the last assistant message containing ## 需求细节
+  // 从后往前查找最后一条助手消息
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
     if (
@@ -21,15 +21,36 @@ function extractMarkdownContent(entries: any[]): string | null {
       const content = entry.data.content;
       if (typeof content !== 'string') continue;
 
-      // Find markdown code block
-      const markdownMatch = content.match(/\`\`\`markdown\s*([\s\S]*?)\`\`\`/);
+      // 1. 查找 markdown 代码块
+      const markdownMatch = content.match(/```markdown\s*([\s\S]*?)```/);
       if (markdownMatch) {
         return markdownMatch[1].trim();
       }
-      // Or look for the section directly
-      if (content.includes('## 需求细节')) {
-        const startIdx = content.indexOf('## 需求细节');
-        return content.slice(startIdx).trim();
+
+      // 2. 查找多种可能的章节标题（按优先级）
+      const sectionHeaders = [
+        '## 需求细节',
+        '## 实现要点',
+        '## Implementation Details',
+        '## Requirements',
+        '## 功能描述',
+        '## 技术方案',
+      ];
+
+      for (const header of sectionHeaders) {
+        if (content.includes(header)) {
+          const startIdx = content.indexOf(header);
+          return content.slice(startIdx).trim();
+        }
+      }
+
+      // 3. 如果消息足够长且包含列表，可能是有效内容
+      if (content.length > 200 && (content.includes('- ') || content.includes('* '))) {
+        // 提取从第一个 ## 开始的内容
+        const h2Match = content.match(/(## .+[\s\S]*)/);
+        if (h2Match) {
+          return h2Match[1].trim();
+        }
       }
     }
   }
@@ -55,6 +76,17 @@ export function SaveBrainstormResultButton({
   );
 
   const canSave = isBrainstormTask && markdownContent && task?.parent_task_id;
+
+  // 显示等待提示：是脑暴任务但尚未提取到内容
+  const showNoContentHint = isBrainstormTask && !markdownContent && task?.parent_task_id;
+
+  if (showNoContentHint) {
+    return (
+      <div className="fixed bottom-6 right-6 z-50 bg-muted text-muted-foreground px-4 py-2 rounded-lg text-sm">
+        等待 AI 生成包含 "## 需求细节" 的内容...
+      </div>
+    );
+  }
 
   if (!canSave) {
     return null;
