@@ -2,6 +2,7 @@ use std::io;
 
 use axum::{Extension, Json, extract::State, http::StatusCode};
 use db::models::{
+    repo::Repo,
     task::{Task, TaskType},
     workspace::Workspace,
     workspace_repo::WorkspaceRepo,
@@ -34,39 +35,81 @@ pub struct UpdateTaskDocInput {
     pub content: String,
 }
 
+/// 获取 Task 的 parent story，支持两种关联方式
+async fn get_parent_story_for_task(
+    pool: &sqlx::SqlitePool,
+    task: &Task,
+) -> Result<Option<Task>, ApiError> {
+    if task.task_type != TaskType::Task {
+        return Ok(None);
+    }
+
+    // 方式1: 通过 parent_task_id 直接关联
+    if let Some(parent_task_id) = task.parent_task_id {
+        let parent = Task::find_by_id(pool, parent_task_id)
+            .await?
+            .ok_or_else(|| ApiError::BadRequest("Parent task not found".to_string()))?;
+        return Ok(Some(parent));
+    }
+
+    // 方式2: 通过 parent_workspace_id 间接关联
+    if let Some(parent_workspace_id) = task.parent_workspace_id {
+        let parent_workspace = Workspace::find_by_id(pool, parent_workspace_id)
+            .await?
+            .ok_or_else(|| ApiError::BadRequest("Parent workspace not found".to_string()))?;
+        let parent = Task::find_by_id(pool, parent_workspace.task_id)
+            .await?
+            .ok_or_else(|| ApiError::BadRequest("Parent task not found".to_string()))?;
+        return Ok(Some(parent));
+    }
+
+    Err(ApiError::BadRequest(
+        "Task must have either parent_task_id or parent_workspace_id".to_string(),
+    ))
+}
+
+/// 获取任务关联的 workspace 和 repo
+async fn get_workspace_and_repo_for_task(
+    pool: &sqlx::SqlitePool,
+    task: &Task,
+    parent_story: Option<&Task>,
+) -> Result<(Workspace, Repo), ApiError> {
+    // 获取 workspace - 需要处理两种情况
+    let workspace = if let Some(parent) = parent_story {
+        // 如果是 Task，需要从 parent story 获取 workspace
+        Workspace::fetch_all(pool, Some(parent.id))
+            .await?
+            .into_iter()
+            .next()
+    } else {
+        // 如果是 Story，直接获取自己的 workspace
+        Workspace::fetch_all(pool, Some(task.id))
+            .await?
+            .into_iter()
+            .next()
+    }
+    .ok_or_else(|| ApiError::BadRequest("No workspace found".to_string()))?;
+
+    let repo = WorkspaceRepo::find_repos_for_workspace(pool, workspace.id)
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(|| ApiError::BadRequest("No repo found".to_string()))?;
+
+    Ok((workspace, repo))
+}
+
 pub async fn get_task_doc(
     Extension(task): Extension<Task>,
     State(deployment): State<DeploymentImpl>,
 ) -> Result<String, ApiError> {
     let pool = &deployment.db().pool;
 
-    let parent_story = if task.task_type == TaskType::Task {
-        let parent_workspace_id = task
-            .parent_workspace_id
-            .ok_or_else(|| ApiError::BadRequest("Doc not found".to_string()))?;
-        let parent_workspace = Workspace::find_by_id(pool, parent_workspace_id)
-            .await?
-            .ok_or_else(|| ApiError::BadRequest("Doc not found".to_string()))?;
-        Some(
-            Task::find_by_id(pool, parent_workspace.task_id)
-                .await?
-                .ok_or_else(|| ApiError::BadRequest("Doc not found".to_string()))?,
-        )
-    } else {
-        None
-    };
+    // 使用新的辅助函数获取 parent story
+    let parent_story = get_parent_story_for_task(pool, &task).await?;
 
-    let workspace = Workspace::fetch_all(pool, Some(task.id))
-        .await?
-        .into_iter()
-        .next()
-        .ok_or_else(|| ApiError::BadRequest("Doc not found".to_string()))?;
-
-    let repo = WorkspaceRepo::find_repos_for_workspace(pool, workspace.id)
-        .await?
-        .into_iter()
-        .next()
-        .ok_or_else(|| ApiError::BadRequest("Doc not found".to_string()))?;
+    // 获取 workspace 和 repo
+    let (_workspace, repo) = get_workspace_and_repo_for_task(pool, &task, parent_story.as_ref()).await?;
 
     let doc_path = get_task_doc_path(&task, parent_story.as_ref(), &repo.path);
     match fs::read_to_string(doc_path).await {
@@ -85,35 +128,11 @@ pub async fn update_task_doc(
 ) -> Result<StatusCode, ApiError> {
     let pool = &deployment.db().pool;
 
-    // Get parent story if this is a Task
-    let parent_story = if task.task_type == TaskType::Task {
-        let parent_workspace_id = task
-            .parent_workspace_id
-            .ok_or_else(|| ApiError::BadRequest("Doc not found".to_string()))?;
-        let parent_workspace = Workspace::find_by_id(pool, parent_workspace_id)
-            .await?
-            .ok_or_else(|| ApiError::BadRequest("Doc not found".to_string()))?;
-        Some(
-            Task::find_by_id(pool, parent_workspace.task_id)
-                .await?
-                .ok_or_else(|| ApiError::BadRequest("Doc not found".to_string()))?,
-        )
-    } else {
-        None
-    };
+    // 使用新的辅助函数获取 parent story
+    let parent_story = get_parent_story_for_task(pool, &task).await?;
 
-    // Get workspace and repo
-    let workspace = Workspace::fetch_all(pool, Some(task.id))
-        .await?
-        .into_iter()
-        .next()
-        .ok_or_else(|| ApiError::BadRequest("Doc not found".to_string()))?;
-
-    let repo = WorkspaceRepo::find_repos_for_workspace(pool, workspace.id)
-        .await?
-        .into_iter()
-        .next()
-        .ok_or_else(|| ApiError::BadRequest("Doc not found".to_string()))?;
+    // 获取 workspace 和 repo
+    let (_workspace, repo) = get_workspace_and_repo_for_task(pool, &task, parent_story.as_ref()).await?;
 
     let doc_path = get_task_doc_path(&task, parent_story.as_ref(), &repo.path);
 
