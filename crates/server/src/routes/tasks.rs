@@ -124,19 +124,22 @@ pub async fn create_task(
     State(deployment): State<DeploymentImpl>,
     Json(payload): Json<CreateTask>,
 ) -> Result<ResponseJson<ApiResponse<Task>>, ApiError> {
-    // Validate task_type and parent_workspace_id relationship
+    // Validate task_type and parent_* relationship
+    let has_parent_workspace = payload.parent_workspace_id.is_some();
+    let has_parent_task = payload.parent_task_id.is_some();
     match payload.task_type {
         TaskType::Story => {
-            if payload.parent_workspace_id.is_some() {
+            if has_parent_workspace || has_parent_task {
                 return Err(ApiError::BadRequest(
-                    "Story cannot have a parent_workspace_id".to_string(),
+                    "Story cannot have parent_workspace_id or parent_task_id".to_string(),
                 ));
             }
         }
         TaskType::Task => {
-            if payload.parent_workspace_id.is_none() {
+            if has_parent_workspace == has_parent_task {
                 return Err(ApiError::BadRequest(
-                    "Task must have a parent_workspace_id".to_string(),
+                    "Task must have exactly one of parent_workspace_id or parent_task_id"
+                        .to_string(),
                 ));
             }
         }
@@ -170,20 +173,43 @@ pub async fn create_task(
 
     // Generate task doc for Task-type tasks (Stories skip - no workspace/repo available yet)
     if task.task_type == TaskType::Task {
-        if let Some(parent_workspace_id) = task.parent_workspace_id {
-            let pool = &deployment.db().pool;
-            // Get repos from parent workspace
+        let pool = &deployment.db().pool;
+
+        // 获取 repo 路径 - 需要从关联的 workspace 获取
+        let repo_path = if let Some(parent_workspace_id) = task.parent_workspace_id {
+            // 方式1: 通过 parent_workspace_id
             let repos = WorkspaceRepo::find_repos_for_workspace(pool, parent_workspace_id).await;
-            if let Ok(repos) = repos {
-                if let Some(first_repo) = repos.first() {
-                    // Get parent story from workspace's task
-                    if let Ok(Some(parent_workspace)) = Workspace::find_by_id(pool, parent_workspace_id).await {
-                        if let Ok(Some(parent_story)) = Task::find_by_id(pool, parent_workspace.task_id).await {
-                            if let Err(e) = generate_task_doc(&task, Some(&parent_story), &first_repo.path).await {
-                                tracing::warn!("Failed to generate task doc for task {}: {}", task.id, e);
-                            }
-                        }
-                    }
+            repos.ok().and_then(|r| r.first().map(|r| r.path.clone()))
+        } else if let Some(parent_task_id) = task.parent_task_id {
+            // 方式2: 通过 parent_task_id 找到其 workspace
+            let parent_workspaces = Workspace::fetch_all(pool, Some(parent_task_id)).await.ok();
+            if let Some(ws) = parent_workspaces.and_then(|w| w.into_iter().next()) {
+                let repos = WorkspaceRepo::find_repos_for_workspace(pool, ws.id).await;
+                repos.ok().and_then(|r| r.first().map(|r| r.path.clone()))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(repo_path) = repo_path {
+            // 获取 parent story
+            let parent_story = if let Some(parent_task_id) = task.parent_task_id {
+                Task::find_by_id(pool, parent_task_id).await.ok().flatten()
+            } else if let Some(parent_workspace_id) = task.parent_workspace_id {
+                if let Ok(Some(parent_workspace)) = Workspace::find_by_id(pool, parent_workspace_id).await {
+                    Task::find_by_id(pool, parent_workspace.task_id).await.ok().flatten()
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            if let Some(parent_story) = parent_story {
+                if let Err(e) = generate_task_doc(&task, Some(&parent_story), &repo_path).await {
+                    tracing::warn!("Failed to generate task doc for task {}: {}", task.id, e);
                 }
             }
         }
@@ -209,19 +235,22 @@ pub async fn create_task_and_start(
         ));
     }
 
-    // Validate task_type and parent_workspace_id relationship
+    // Validate task_type and parent_* relationship
+    let has_parent_workspace = payload.task.parent_workspace_id.is_some();
+    let has_parent_task = payload.task.parent_task_id.is_some();
     match payload.task.task_type {
         TaskType::Story => {
-            if payload.task.parent_workspace_id.is_some() {
+            if has_parent_workspace || has_parent_task {
                 return Err(ApiError::BadRequest(
-                    "Story cannot have a parent_workspace_id".to_string(),
+                    "Story cannot have parent_workspace_id or parent_task_id".to_string(),
                 ));
             }
         }
         TaskType::Task => {
-            if payload.task.parent_workspace_id.is_none() {
+            if has_parent_workspace == has_parent_task {
                 return Err(ApiError::BadRequest(
-                    "Task must have a parent_workspace_id".to_string(),
+                    "Task must have exactly one of parent_workspace_id or parent_task_id"
+                        .to_string(),
                 ));
             }
         }
@@ -362,6 +391,7 @@ pub async fn update_task(
     let parent_workspace_id = payload
         .parent_workspace_id
         .or(existing_task.parent_workspace_id);
+    let parent_task_id = payload.parent_task_id.or(existing_task.parent_task_id);
 
     let task = Task::update(
         &deployment.db().pool,
@@ -371,6 +401,7 @@ pub async fn update_task(
         description,
         status,
         parent_workspace_id,
+        parent_task_id,
     )
     .await?;
 
