@@ -120,6 +120,63 @@ pub async fn get_task(
     Ok(ResponseJson(ApiResponse::success(task)))
 }
 
+/// Helper to generate task documentation after task creation.
+/// Handles both direct repo path and lookup-based repo resolution.
+async fn try_generate_task_doc(
+    pool: &sqlx::SqlitePool,
+    task: &Task,
+    repo_path_hint: Option<PathBuf>,
+) {
+    // For Story tasks, generate with no parent
+    if task.task_type == TaskType::Story {
+        if let Some(repo_path) = repo_path_hint {
+            if let Err(e) = generate_task_doc(task, None, &repo_path).await {
+                tracing::warn!("Failed to generate task doc for story {}: {}", task.id, e);
+            }
+        }
+        return;
+    }
+
+    // For Task tasks, need parent story
+    let repo_path = match repo_path_hint {
+        Some(path) => Some(path),
+        None => resolve_repo_path_for_task(pool, task).await,
+    };
+
+    if let Some(repo_path) = repo_path {
+        if let Ok(Some(parent_story)) = task.find_parent_story(pool).await {
+            if let Err(e) = generate_task_doc(task, Some(&parent_story), &repo_path).await {
+                tracing::warn!("Failed to generate task doc for task {}: {}", task.id, e);
+            }
+        }
+    }
+}
+
+/// Resolve repo path from task's parent workspace
+async fn resolve_repo_path_for_task(pool: &sqlx::SqlitePool, task: &Task) -> Option<PathBuf> {
+    // Try parent_workspace_id first
+    if let Some(parent_workspace_id) = task.parent_workspace_id {
+        let repos = WorkspaceRepo::find_repos_for_workspace(pool, parent_workspace_id).await;
+        if let Some(path) = repos.ok().and_then(|r| r.first().map(|r| r.path.clone())) {
+            return Some(path);
+        }
+    }
+
+    // Try parent_task_id -> workspace -> repo
+    if let Some(parent_task_id) = task.parent_task_id {
+        if let Ok(workspaces) = Workspace::fetch_all(pool, Some(parent_task_id)).await {
+            if let Some(ws) = workspaces.into_iter().next() {
+                let repos = WorkspaceRepo::find_repos_for_workspace(pool, ws.id).await;
+                if let Some(path) = repos.ok().and_then(|r| r.first().map(|r| r.path.clone())) {
+                    return Some(path);
+                }
+            }
+        }
+    }
+
+    None
+}
+
 pub async fn create_task(
     State(deployment): State<DeploymentImpl>,
     Json(payload): Json<CreateTask>,
@@ -173,46 +230,7 @@ pub async fn create_task(
 
     // Generate task doc for Task-type tasks (Stories skip - no workspace/repo available yet)
     if task.task_type == TaskType::Task {
-        let pool = &deployment.db().pool;
-
-        // 获取 repo 路径 - 需要从关联的 workspace 获取
-        let repo_path = if let Some(parent_workspace_id) = task.parent_workspace_id {
-            // 方式1: 通过 parent_workspace_id
-            let repos = WorkspaceRepo::find_repos_for_workspace(pool, parent_workspace_id).await;
-            repos.ok().and_then(|r| r.first().map(|r| r.path.clone()))
-        } else if let Some(parent_task_id) = task.parent_task_id {
-            // 方式2: 通过 parent_task_id 找到其 workspace
-            let parent_workspaces = Workspace::fetch_all(pool, Some(parent_task_id)).await.ok();
-            if let Some(ws) = parent_workspaces.and_then(|w| w.into_iter().next()) {
-                let repos = WorkspaceRepo::find_repos_for_workspace(pool, ws.id).await;
-                repos.ok().and_then(|r| r.first().map(|r| r.path.clone()))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        if let Some(repo_path) = repo_path {
-            // 获取 parent story
-            let parent_story = if let Some(parent_task_id) = task.parent_task_id {
-                Task::find_by_id(pool, parent_task_id).await.ok().flatten()
-            } else if let Some(parent_workspace_id) = task.parent_workspace_id {
-                if let Ok(Some(parent_workspace)) = Workspace::find_by_id(pool, parent_workspace_id).await {
-                    Task::find_by_id(pool, parent_workspace.task_id).await.ok().flatten()
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            if let Some(parent_story) = parent_story {
-                if let Err(e) = generate_task_doc(&task, Some(&parent_story), &repo_path).await {
-                    tracing::warn!("Failed to generate task doc for task {}: {}", task.id, e);
-                }
-            }
-        }
+        try_generate_task_doc(&deployment.db().pool, &task, None).await;
     }
 
     Ok(ResponseJson(ApiResponse::success(task)))
@@ -317,29 +335,9 @@ pub async fn create_task_and_start(
     WorkspaceRepo::create_many(&deployment.db().pool, workspace.id, &workspace_repos).await?;
 
     // Generate task doc after workspace repos are created
-    // Get the first repo's path for doc generation
     if let Some(first_repo_input) = payload.repos.first() {
         if let Ok(Some(first_repo)) = Repo::find_by_id(pool, first_repo_input.repo_id).await {
-            match task.task_type {
-                TaskType::Story => {
-                    // For Story tasks: generate with no parent
-                    if let Err(e) = generate_task_doc(&task, None, &first_repo.path).await {
-                        tracing::warn!("Failed to generate task doc for story {}: {}", task.id, e);
-                    }
-                }
-                TaskType::Task => {
-                    // For Task tasks: need to get parent story via parent_workspace_id
-                    if let Some(parent_workspace_id) = task.parent_workspace_id {
-                        if let Ok(Some(parent_workspace)) = Workspace::find_by_id(pool, parent_workspace_id).await {
-                            if let Ok(Some(parent_story)) = Task::find_by_id(pool, parent_workspace.task_id).await {
-                                if let Err(e) = generate_task_doc(&task, Some(&parent_story), &first_repo.path).await {
-                                    tracing::warn!("Failed to generate task doc for task {}: {}", task.id, e);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            try_generate_task_doc(pool, &task, Some(first_repo.path.clone())).await;
         }
     }
 
