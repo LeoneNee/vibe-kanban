@@ -217,35 +217,36 @@ ORDER BY t.created_at DESC"#,
         task_type_filter: Option<TaskType>,
         parent_task_id_filter: Option<Option<Uuid>>,
     ) -> Result<Vec<Task>, sqlx::Error> {
-        let mut query = String::from(
-            "SELECT id, project_id, title, description, status, task_type, parent_workspace_id, parent_task_id, created_at, updated_at FROM tasks WHERE project_id = ?1",
-        );
+        use sqlx::QueryBuilder;
 
-        if task_type_filter.is_some() {
-            query.push_str(" AND task_type = ?2");
+        let mut builder: QueryBuilder<Sqlite> = QueryBuilder::new(
+            "SELECT id, project_id, title, description, status, task_type, parent_workspace_id, parent_task_id, created_at, updated_at FROM tasks WHERE project_id = "
+        );
+        builder.push_bind(project_id);
+
+        if let Some(task_type) = task_type_filter {
+            builder.push(" AND task_type = ");
+            builder.push_bind(task_type);
         }
 
-        if let Some(parent_filter) = &parent_task_id_filter {
-            if parent_filter.is_none() {
-                query.push_str(" AND parent_task_id IS NULL");
-            } else {
-                query.push_str(" AND parent_task_id = ?3");
+        if let Some(parent_filter) = parent_task_id_filter {
+            match parent_filter {
+                None => {
+                    builder.push(" AND parent_task_id IS NULL");
+                }
+                Some(parent_id) => {
+                    builder.push(" AND parent_task_id = ");
+                    builder.push_bind(parent_id);
+                }
             }
         }
 
-        query.push_str(" ORDER BY created_at DESC");
+        builder.push(" ORDER BY created_at DESC");
 
-        let mut q = sqlx::query_as::<_, Task>(&query).bind(project_id);
-
-        if let Some(tt) = task_type_filter {
-            q = q.bind(tt);
-        }
-
-        if let Some(Some(parent_id)) = parent_task_id_filter {
-            q = q.bind(parent_id);
-        }
-
-        q.fetch_all(pool).await
+        builder
+            .build_query_as::<Task>()
+            .fetch_all(pool)
+            .await
     }
 
     pub async fn find_by_id(pool: &SqlitePool, id: Uuid) -> Result<Option<Self>, sqlx::Error> {
