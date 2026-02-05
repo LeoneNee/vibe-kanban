@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Plus, Sparkles } from 'lucide-react';
 
 import { Loader } from '@/components/ui/loader';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 
 import { useProject } from '@/contexts/ProjectContext';
 import { useSearch } from '@/contexts/SearchContext';
@@ -15,6 +16,7 @@ import StoryKanbanBoard, {
 import type { DragEndEvent } from '@/components/ui/shadcn-io/kanban';
 import { paths } from '@/lib/paths';
 import { tasksApi } from '@/lib/api';
+import { openTaskForm } from '@/lib/openTaskForm';
 import type { Task, TaskStatus } from 'shared/types';
 
 const normalizeStatus = (status: string): TaskStatus =>
@@ -114,6 +116,16 @@ export function ProjectStories() {
     [navigate, projectId]
   );
 
+  const handleCreateStory = useCallback(() => {
+    if (!projectId) return;
+    openTaskForm({ mode: 'create', projectId, taskType: 'story' });
+  }, [projectId]);
+
+  const handleBulkCreateStories = useCallback(() => {
+    if (!projectId) return;
+    navigate(paths.storyBrainstorm(projectId));
+  }, [projectId, navigate]);
+
   const handleDragEnd = useCallback(
     async (event: DragEndEvent) => {
       const { active, over } = event;
@@ -133,8 +145,8 @@ export function ProjectStories() {
           title: story.title,
           description: story.description,
           status: newStatus,
-          task_type: story.task_type,
           parent_workspace_id: story.parent_workspace_id,
+          parent_task_id: story.parent_task_id,
           image_ids: null,
         });
       } catch (err) {
@@ -184,11 +196,33 @@ export function ProjectStories() {
 
   return (
     <div className="h-full flex flex-col">
+      {stories.length > 0 && (
+        <div className="flex items-center justify-end gap-2 px-4 pt-4">
+          <Button variant="outline" onClick={handleBulkCreateStories}>
+            <Sparkles className="h-4 w-4 mr-2" />
+            Brainstorm / Batch
+          </Button>
+          <Button onClick={handleCreateStory}>
+            <Plus className="h-4 w-4 mr-2" />
+            Create Story
+          </Button>
+        </div>
+      )}
       {stories.length === 0 ? (
         <div className="max-w-7xl mx-auto mt-8">
           <Card>
             <CardContent className="text-center py-8">
               <p className="text-muted-foreground">No stories yet</p>
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                <Button onClick={handleCreateStory}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Story
+                </Button>
+                <Button variant="outline" onClick={handleBulkCreateStories}>
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  Brainstorm / Batch
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -207,6 +241,7 @@ export function ProjectStories() {
             onDragEnd={handleDragEnd}
             onViewStoryDetails={handleViewStoryDetails}
             selectedStoryId={selectedStory?.id}
+            onCreateStory={handleCreateStory}
             projectId={projectId!}
           />
         </div>
@@ -216,4 +251,3 @@ export function ProjectStories() {
 }
 
 export default ProjectStories;
-
