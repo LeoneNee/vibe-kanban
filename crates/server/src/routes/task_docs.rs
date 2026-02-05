@@ -44,28 +44,16 @@ async fn get_parent_story_for_task(
         return Ok(None);
     }
 
-    // 方式1: 通过 parent_task_id 直接关联
-    if let Some(parent_task_id) = task.parent_task_id {
-        let parent = Task::find_by_id(pool, parent_task_id)
-            .await?
-            .ok_or_else(|| ApiError::BadRequest("Parent task not found".to_string()))?;
-        return Ok(Some(parent));
+    // Use the model method for resolution
+    let parent = task.find_parent_story(pool).await?;
+
+    if parent.is_none() && (task.parent_task_id.is_some() || task.parent_workspace_id.is_some()) {
+        return Err(ApiError::BadRequest(
+            "Parent task not found".to_string(),
+        ));
     }
 
-    // 方式2: 通过 parent_workspace_id 间接关联
-    if let Some(parent_workspace_id) = task.parent_workspace_id {
-        let parent_workspace = Workspace::find_by_id(pool, parent_workspace_id)
-            .await?
-            .ok_or_else(|| ApiError::BadRequest("Parent workspace not found".to_string()))?;
-        let parent = Task::find_by_id(pool, parent_workspace.task_id)
-            .await?
-            .ok_or_else(|| ApiError::BadRequest("Parent task not found".to_string()))?;
-        return Ok(Some(parent));
-    }
-
-    Err(ApiError::BadRequest(
-        "Task must have either parent_task_id or parent_workspace_id".to_string(),
-    ))
+    Ok(parent)
 }
 
 /// 获取任务关联的 workspace 和 repo
