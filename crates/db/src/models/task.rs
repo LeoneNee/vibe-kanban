@@ -141,6 +141,7 @@ pub struct UpdateTask {
     pub parent_workspace_id: Option<Uuid>,
     pub parent_task_id: Option<Uuid>,
     pub image_ids: Option<Vec<Uuid>>,
+    pub workflow_state: Option<WorkflowState>,
 }
 
 impl Task {
@@ -335,11 +336,12 @@ ORDER BY t.created_at DESC"#,
         status: TaskStatus,
         parent_workspace_id: Option<Uuid>,
         parent_task_id: Option<Uuid>,
+        workflow_state: Option<WorkflowState>,
     ) -> Result<Self, sqlx::Error> {
         sqlx::query_as!(
             Task,
             r#"UPDATE tasks
-               SET title = $3, description = $4, status = $5, parent_workspace_id = $6, parent_task_id = $7
+               SET title = $3, description = $4, status = $5, parent_workspace_id = $6, parent_task_id = $7, workflow_state = COALESCE($8, workflow_state), updated_at = datetime('now', 'subsec')
                WHERE id = $1 AND project_id = $2
                RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
             id,
@@ -348,7 +350,8 @@ ORDER BY t.created_at DESC"#,
             description,
             status,
             parent_workspace_id,
-            parent_task_id
+            parent_task_id,
+            workflow_state
         )
         .fetch_one(pool)
         .await
@@ -367,6 +370,25 @@ ORDER BY t.created_at DESC"#,
         .execute(pool)
         .await?;
         Ok(())
+    }
+
+    /// 更新任务的工作流状态
+    pub async fn update_workflow_state(
+        pool: &SqlitePool,
+        id: Uuid,
+        workflow_state: WorkflowState,
+    ) -> Result<Self, sqlx::Error> {
+        sqlx::query_as!(
+            Task,
+            r#"UPDATE tasks
+               SET workflow_state = $2, updated_at = datetime('now', 'subsec')
+               WHERE id = $1
+               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
+            id,
+            workflow_state
+        )
+        .fetch_one(pool)
+        .await
     }
 
     /// Update the parent_workspace_id field for a task

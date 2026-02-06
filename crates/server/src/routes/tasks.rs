@@ -390,6 +390,7 @@ pub async fn update_task(
         .parent_workspace_id
         .or(existing_task.parent_workspace_id);
     let parent_task_id = payload.parent_task_id.or(existing_task.parent_task_id);
+    let workflow_state = payload.workflow_state;
 
     let task = Task::update(
         &deployment.db().pool,
@@ -400,6 +401,7 @@ pub async fn update_task(
         status,
         parent_workspace_id,
         parent_task_id,
+        workflow_state,
     )
     .await?;
 
@@ -417,6 +419,29 @@ pub async fn delete_task(
 ) -> Result<(StatusCode, ResponseJson<ApiResponse<()>>), ApiError> {
     let pool = &deployment.db().pool;
 
+    // If this is a Story, first handle all child tasks
+    let mut child_workspace_dirs: Vec<PathBuf> = Vec::new();
+    let mut child_repositories: Vec<Repo> = Vec::new();
+    let child_tasks = if task.task_type == TaskType::Story {
+        let children = Task::find_children_by_parent_task_id(pool, task.id).await?;
+        for child in &children {
+            // Stop any running processes for child tasks
+            let child_workspaces = Workspace::fetch_all(pool, Some(child.id)).await?;
+            for workspace in &child_workspaces {
+                deployment.container().try_stop(workspace, true).await;
+                if let Some(ref container_ref) = workspace.container_ref {
+                    child_workspace_dirs.push(PathBuf::from(container_ref));
+                }
+            }
+            // Collect repositories for cleanup
+            let child_repos = WorkspaceRepo::find_unique_repos_for_task(pool, child.id).await?;
+            child_repositories.extend(child_repos);
+        }
+        children
+    } else {
+        Vec::new()
+    };
+
     // Gather task attempts data needed for background cleanup
     let attempts = Workspace::fetch_all(pool, Some(task.id))
         .await
@@ -433,10 +458,15 @@ pub async fn delete_task(
     let repositories = WorkspaceRepo::find_unique_repos_for_task(pool, task.id).await?;
 
     // Collect workspace directories that need cleanup
-    let workspace_dirs: Vec<PathBuf> = attempts
+    let mut workspace_dirs: Vec<PathBuf> = attempts
         .iter()
         .filter_map(|attempt| attempt.container_ref.as_ref().map(PathBuf::from))
         .collect();
+    // Add child workspace directories
+    workspace_dirs.extend(child_workspace_dirs);
+    // Merge child repositories
+    let mut all_repositories = repositories;
+    all_repositories.extend(child_repositories);
 
     // Use a transaction to ensure atomicity: either all operations succeed or all are rolled back
     let mut tx = pool.begin().await?;
@@ -449,6 +479,13 @@ pub async fn delete_task(
             Task::nullify_children_by_workspace_id(&mut *tx, attempt.id).await?;
         total_children_affected += children_affected;
     }
+
+    // If this is a Story, delete all child tasks first
+    let child_tasks_deleted = if !child_tasks.is_empty() {
+        Task::delete_children_by_parent_task_id(&mut *tx, task.id).await?
+    } else {
+        0
+    };
 
     // Delete task from database (FK CASCADE will handle task_attempts)
     let rows_affected = Task::delete(&mut *tx, task.id).await?;
@@ -468,13 +505,23 @@ pub async fn delete_task(
         );
     }
 
+    if child_tasks_deleted > 0 {
+        tracing::info!(
+            "Cascade deleted {} child tasks before deleting story {}",
+            child_tasks_deleted,
+            task.id
+        );
+    }
+
     deployment
         .track_if_analytics_allowed(
             "task_deleted",
             serde_json::json!({
                 "task_id": task.id.to_string(),
                 "project_id": task.project_id.to_string(),
+                "task_type": task.task_type.to_string(),
                 "attempt_count": attempts.len(),
+                "child_tasks_deleted": child_tasks_deleted,
             }),
         )
         .await;
@@ -486,11 +533,11 @@ pub async fn delete_task(
             "Starting background cleanup for task {} ({} workspaces, {} repos)",
             task_id,
             workspace_dirs.len(),
-            repositories.len()
+            all_repositories.len()
         );
 
         for workspace_dir in &workspace_dirs {
-            if let Err(e) = WorkspaceManager::cleanup_workspace(workspace_dir, &repositories).await
+            if let Err(e) = WorkspaceManager::cleanup_workspace(workspace_dir, &all_repositories).await
             {
                 tracing::error!(
                     "Background workspace cleanup failed for task {} at {}: {}",
