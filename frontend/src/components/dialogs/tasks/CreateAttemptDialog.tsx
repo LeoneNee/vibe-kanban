@@ -27,6 +27,7 @@ import NiceModal, { useModal } from '@ebay/nice-modal-react';
 import { defineModal } from '@/lib/modals';
 import type { ExecutorProfileId, BaseCodingAgent } from 'shared/types';
 import { useKeySubmitTask, Scope } from '@/keyboard';
+import { tasksApi } from '@/lib/api';
 
 export interface CreateAttemptDialogProps {
   taskId: string;
@@ -41,7 +42,25 @@ const CreateAttemptDialogImpl = NiceModal.create<CreateAttemptDialogProps>(
     const { profiles, config } = useUserSystem();
     const { createAttempt, isCreating, error } = useAttemptCreation({
       taskId,
-      onSuccess: (attempt) => {
+      onSuccess: async (attempt) => {
+        // 更新 workflow_state 为 'executing'
+        if (task) {
+          try {
+            await tasksApi.update(taskId, {
+              title: task.title,
+              description: task.description,
+              status: task.status,
+              workflow_state: 'executing',
+              parent_workspace_id: task.parent_workspace_id,
+              parent_task_id: task.parent_task_id,
+              image_ids: null,
+            });
+          } catch (err) {
+            console.error('Failed to update workflow_state:', err);
+          }
+        }
+
+        // 导航到 workspace
         if (projectId) {
           navigate(paths.attempt(projectId, taskId, attempt.id));
         }

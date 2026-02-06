@@ -11,10 +11,11 @@ import type { TaskWithAttemptStatus } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { NewCardContent } from '../ui/new-card';
 import { Button } from '../ui/button';
-import { PlusIcon } from 'lucide-react';
+import { PlusIcon, FileText, Play } from 'lucide-react';
 import { CreateAttemptDialog } from '@/components/dialogs/tasks/CreateAttemptDialog';
 import WYSIWYGEditor from '@/components/ui/wysiwyg';
 import { DataTable, type ColumnDef } from '@/components/ui/table';
+import { tasksApi } from '@/lib/api';
 
 interface TaskPanelProps {
   task: TaskWithAttemptStatus | null;
@@ -143,6 +144,69 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
                 <p className="text-xs text-muted-foreground">
                   下一步: {workflow.actionLabel}
                 </p>
+              )}
+
+              {/* 工作流动作按钮 */}
+              {workflow.nextAction === 'plan' && (
+                <Button
+                  onClick={async () => {
+                    if (!task || !projectId) return;
+
+                    // 更新 workflow_state 为 'brainstormed'（如果还不是）
+                    if (task.workflow_state !== 'brainstormed') {
+                      await tasksApi.update(task.id, {
+                        title: task.title,
+                        description: task.description,
+                        status: task.status,
+                        workflow_state: 'brainstormed',
+                        parent_workspace_id: task.parent_workspace_id,
+                        parent_task_id: task.parent_task_id,
+                        image_ids: null,
+                      });
+                    }
+
+                    // 显示对话框让用户创建 planning workspace
+                    CreateAttemptDialog.show({
+                      taskId: task.id,
+                    });
+                  }}
+                  size="default"
+                  className="w-full mt-2"
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  {workflow.actionLabel}
+                </Button>
+              )}
+
+              {workflow.nextAction === 'execute' && (
+                <Button
+                  onClick={async () => {
+                    if (!task || !projectId) return;
+
+                    // 更新 workflow_state 为 'planned'（如果还不是）
+                    if (task.workflow_state !== 'planned') {
+                      await tasksApi.update(task.id, {
+                        title: task.title,
+                        description: task.description,
+                        status: task.status,
+                        workflow_state: 'planned',
+                        parent_workspace_id: task.parent_workspace_id,
+                        parent_task_id: task.parent_task_id,
+                        image_ids: null,
+                      });
+                    }
+
+                    // 创建执行 workspace
+                    CreateAttemptDialog.show({
+                      taskId: task.id,
+                    });
+                  }}
+                  size="default"
+                  className="w-full mt-2"
+                >
+                  <Play className="mr-2 h-4 w-4" />
+                  {workflow.actionLabel}
+                </Button>
               )}
             </div>
           )}
