@@ -110,6 +110,7 @@ pub struct CreateTask {
     pub parent_workspace_id: Option<Uuid>,
     pub parent_task_id: Option<Uuid>,
     pub image_ids: Option<Vec<Uuid>>,
+    #[ts(optional)]
     pub workflow_state: Option<WorkflowState>,
 }
 
@@ -141,6 +142,7 @@ pub struct UpdateTask {
     pub parent_workspace_id: Option<Uuid>,
     pub parent_task_id: Option<Uuid>,
     pub image_ids: Option<Vec<Uuid>>,
+    #[ts(optional)]
     pub workflow_state: Option<WorkflowState>,
 }
 

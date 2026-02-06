@@ -50,9 +50,9 @@ export type TaskWithAttemptStatus = { has_in_progress_attempt: boolean, last_att
 
 export type TaskRelationships = { parent_task: Task | null, current_workspace: Workspace, children: Array<Task>, };
 
-export type CreateTask = { project_id: string, title: string, description: string | null, status: TaskStatus | null, task_type: TaskType, parent_workspace_id: string | null, parent_task_id: string | null, image_ids: Array<string> | null, workflow_state: WorkflowState | null, };
+export type CreateTask = { project_id: string, title: string, description: string | null, status: TaskStatus | null, task_type: TaskType, parent_workspace_id: string | null, parent_task_id: string | null, image_ids: Array<string> | null, workflow_state?: WorkflowState, };
 
-export type UpdateTask = { title: string | null, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, parent_task_id: string | null, image_ids: Array<string> | null, workflow_state: WorkflowState | null, };
+export type UpdateTask = { title: string | null, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, parent_task_id: string | null, image_ids: Array<string> | null, workflow_state?: WorkflowState, };
 
 export type DraftFollowUpData = { message: string, executor_profile_id: ExecutorProfileId, };
 

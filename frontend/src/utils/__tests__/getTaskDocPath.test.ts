@@ -29,6 +29,8 @@ describe('getTaskDocPath', () => {
     status: 'todo',
     task_type: taskType,
     parent_workspace_id: null,
+    parent_task_id: null,
+    workflow_state: 'new',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });
