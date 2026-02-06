@@ -4,6 +4,7 @@ import { useTaskAttemptsWithSessions } from '@/hooks/useTaskAttempts';
 import { useTaskAttemptWithSession } from '@/hooks/useTaskAttempt';
 import { useNavigateWithSearch } from '@/hooks';
 import { useUserSystem } from '@/components/ConfigProvider';
+import { useTaskWorkflow } from '@/hooks/useTaskWorkflow';
 import { paths } from '@/lib/paths';
 import type { TaskWithAttemptStatus } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
@@ -23,6 +24,7 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
   const navigate = useNavigateWithSearch();
   const { projectId } = useProject();
   const { config } = useUserSystem();
+  const workflow = useTaskWorkflow(task);
 
   const {
     data: attempts = [],
@@ -103,6 +105,25 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
     <>
       <NewCardContent>
         <div className="p-6 flex flex-col h-full max-h-[calc(100vh-8rem)]">
+          {task && workflow.progress > 0 && (
+            <div className="mb-4 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">工作流进度</span>
+                <span className="text-foreground font-medium">{workflow.progress}%</span>
+              </div>
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all duration-300"
+                  style={{ width: `${workflow.progress}%` }}
+                />
+              </div>
+              {workflow.nextAction && (
+                <p className="text-xs text-muted-foreground">
+                  下一步: {workflow.actionLabel}
+                </p>
+              )}
+            </div>
+          )}
           <div className="space-y-3 overflow-y-auto flex-shrink min-h-0">
             <WYSIWYGEditor value={titleContent} disabled />
             {descriptionContent && (
