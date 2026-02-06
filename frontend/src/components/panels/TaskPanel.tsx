@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { useEffect } from 'react';
 import { useProject } from '@/contexts/ProjectContext';
 import { useTaskAttemptsWithSessions } from '@/hooks/useTaskAttempts';
 import { useTaskAttemptWithSession } from '@/hooks/useTaskAttempt';
@@ -25,6 +26,27 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
   const { projectId } = useProject();
   const { config } = useUserSystem();
   const workflow = useTaskWorkflow(task);
+
+  // 自动导航到 brainstorm（仅首次）
+  useEffect(() => {
+    if (!task || !projectId || !navigate) return;
+
+    // 仅对 Story 下的 Task 自动触发工作流
+    const storyId = task.parent_task_id;
+    if (!storyId) return;
+
+    // 如果是 new 状态且没有描述，自动导航到 brainstorm
+    if (workflow.nextAction === 'brainstorm' && !task.description) {
+      const storageKey = `task-auto-brainstorm-${task.id}`;
+      const hasShown = window.localStorage.getItem(storageKey);
+
+      // 避免无限循环，只自动触发一次
+      if (hasShown !== 'shown') {
+        window.localStorage.setItem(storageKey, 'shown');
+        navigate(paths.taskBrainstorm(projectId, storyId, task.id));
+      }
+    }
+  }, [task, workflow.nextAction, projectId, navigate]);
 
   const {
     data: attempts = [],

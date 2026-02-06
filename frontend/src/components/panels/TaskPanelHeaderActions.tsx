@@ -28,8 +28,11 @@ export const TaskPanelHeaderActions = ({
     }
   };
 
-  // Only show brainstorm button for tasks under a story
-  const showBrainstorm = !!storyId && task.task_type === 'task';
+  // Only show brainstorm button for tasks under a story in new or brainstormed state
+  const showBrainstorm =
+    !!storyId &&
+    task.task_type === 'task' &&
+    (task.workflow_state === 'new' || task.workflow_state === 'brainstormed');
 
   return (
     <>
@@ -38,10 +41,14 @@ export const TaskPanelHeaderActions = ({
           variant="outline"
           size="sm"
           onClick={handleBrainstorm}
-          title="Brainstorm requirements"
+          title={
+            task.workflow_state === 'new'
+              ? 'Start requirement clarification'
+              : 'Review brainstorm results'
+          }
         >
           <Sparkles size={16} className="mr-1" />
-          Brainstorm
+          {task.workflow_state === 'new' ? 'Brainstorm' : 'Review'}
         </Button>
       )}
       <ActionsDropdown task={task} />
