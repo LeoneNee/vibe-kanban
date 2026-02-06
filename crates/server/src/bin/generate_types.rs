@@ -27,6 +27,8 @@ fn generate_types_content() -> String {
         db::models::tag::CreateTag::decl(),
         db::models::tag::UpdateTag::decl(),
         db::models::task::TaskStatus::decl(),
+        db::models::task::TaskType::decl(),
+        db::models::task::WorkflowState::decl(),
         db::models::task::Task::decl(),
         db::models::task::TaskWithAttemptStatus::decl(),
         db::models::task::TaskRelationships::decl(),

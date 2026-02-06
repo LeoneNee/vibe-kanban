@@ -97,7 +97,7 @@ mod tests {
 #[cfg(test)]
 mod path_tests {
     use super::*;
-    use db::models::task::{Task, TaskStatus, TaskType};
+    use db::models::task::{Task, TaskStatus, TaskType, WorkflowState};
     use chrono::Utc;
     use uuid::Uuid;
 
@@ -111,6 +111,7 @@ mod path_tests {
             task_type,
             parent_workspace_id: None,
             parent_task_id: None,
+            workflow_state: WorkflowState::default(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
