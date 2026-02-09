@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { useCompleteBrainstorm } from '../useCompleteBrainstorm';
 import type { BrainstormCard } from '@/utils/extractJsonCards';
+import { BaseCodingAgent } from 'shared/types';
 
 // Mock sessionsApi
 vi.mock('@/lib/api', () => ({
@@ -46,14 +47,14 @@ describe('useCompleteBrainstorm', () => {
       useCompleteBrainstorm({ sessionId: 'test-session' })
     );
 
-    await result.current.complete(mockCards, 'claude_code');
+    await result.current.complete(mockCards, BaseCodingAgent.CLAUDE_CODE);
 
     expect(sessionsApi.followUp).toHaveBeenCalledWith(
       'test-session',
       expect.objectContaining({
         prompt: expect.stringContaining('/story-doc-generator'),
         executor_profile_id: {
-          executor: 'claude_code',
+          executor: BaseCodingAgent.CLAUDE_CODE,
           variant: null,
         },
       })
@@ -67,7 +68,7 @@ describe('useCompleteBrainstorm', () => {
 
     expect(result.current.isCompleting).toBe(false);
 
-    await result.current.complete(mockCards, 'claude_code');
+    await result.current.complete(mockCards, BaseCodingAgent.CLAUDE_CODE);
 
     await waitFor(() => {
       expect(result.current.isCompleting).toBe(false);
@@ -85,7 +86,7 @@ describe('useCompleteBrainstorm', () => {
     );
 
     await expect(
-      result.current.complete(mockCards, 'claude_code')
+      result.current.complete(mockCards, BaseCodingAgent.CLAUDE_CODE)
     ).rejects.toThrow('API error');
 
     await waitFor(() => {
@@ -101,7 +102,7 @@ describe('useCompleteBrainstorm', () => {
     );
 
     await expect(
-      result.current.complete(mockCards, 'claude_code')
+      result.current.complete(mockCards, BaseCodingAgent.CLAUDE_CODE)
     ).rejects.toThrow('No session ID');
 
     expect(sessionsApi.followUp).not.toHaveBeenCalled();
