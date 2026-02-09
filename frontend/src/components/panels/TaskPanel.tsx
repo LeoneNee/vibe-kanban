@@ -1,5 +1,4 @@
 import { useTranslation } from 'react-i18next';
-import { useEffect } from 'react';
 import { useProject } from '@/contexts/ProjectContext';
 import { useTaskAttemptsWithSessions } from '@/hooks/useTaskAttempts';
 import { useTaskAttemptWithSession } from '@/hooks/useTaskAttempt';
@@ -11,7 +10,7 @@ import type { TaskWithAttemptStatus } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { NewCardContent } from '../ui/new-card';
 import { Button } from '../ui/button';
-import { PlusIcon, FileText, Play } from 'lucide-react';
+import { PlusIcon, FileText, Play, Sparkles } from 'lucide-react';
 import { CreateAttemptDialog } from '@/components/dialogs/tasks/CreateAttemptDialog';
 import WYSIWYGEditor from '@/components/ui/wysiwyg';
 import { DataTable, type ColumnDef } from '@/components/ui/table';
@@ -30,27 +29,6 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
 
   // Extract story context from task
   const storyId = task?.parent_task_id;
-
-  // 自动导航到 brainstorm（仅首次）
-  useEffect(() => {
-    if (!task || !projectId || !navigate) return;
-
-    // 仅对 Story 下的 Task 自动触发工作流
-    const storyId = task.parent_task_id;
-    if (!storyId) return;
-
-    // 如果是 new 状态且没有描述，自动导航到 brainstorm
-    if (workflow.nextAction === 'brainstorm' && !task.description) {
-      const storageKey = `task-auto-brainstorm-${task.id}`;
-      const hasShown = window.localStorage.getItem(storageKey);
-
-      // 避免无限循环，只自动触发一次
-      if (hasShown !== 'shown') {
-        window.localStorage.setItem(storageKey, 'shown');
-        navigate(paths.taskBrainstorm(projectId, storyId, task.id));
-      }
-    }
-  }, [task, workflow.nextAction, projectId, navigate]);
 
   const {
     data: attempts = [],
@@ -150,6 +128,23 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
               )}
 
               {/* 工作流动作按钮 */}
+              {workflow.nextAction === 'brainstorm' && (
+                <Button
+                  onClick={async () => {
+                    if (!task || !projectId) return;
+                    const storyId = task.parent_task_id;
+                    if (!storyId) return;
+
+                    navigate(paths.taskBrainstorm(projectId, storyId, task.id));
+                  }}
+                  size="default"
+                  className="w-full mt-2"
+                >
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  {workflow.actionLabel}
+                </Button>
+              )}
+
               {workflow.nextAction === 'plan' && (
                 <Button
                   onClick={async () => {
