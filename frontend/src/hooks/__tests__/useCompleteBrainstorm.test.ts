@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, waitFor, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { renderHook, waitFor } from '@testing-library/react';
 import { useCompleteBrainstorm } from '../useCompleteBrainstorm';
 import type { BrainstormCard } from '@/utils/extractJsonCards';
 import { BaseCodingAgent } from 'shared/types';
@@ -47,7 +47,7 @@ describe('useCompleteBrainstorm', () => {
 
     // Mock entries to return increasing length on subsequent calls
     let callCount = 0;
-    (useEntries as any).mockImplementation(() => ({
+    (useEntries as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
       entries: Array(++callCount).fill({ id: 'entry' }),
     }));
 
@@ -71,7 +71,7 @@ describe('useCompleteBrainstorm', () => {
 
   it('should handle errors from sessionsApi', async () => {
     const { sessionsApi } = await import('@/lib/api');
-    (sessionsApi.followUp as any).mockRejectedValueOnce(
+    (sessionsApi.followUp as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('API error')
     );
 
