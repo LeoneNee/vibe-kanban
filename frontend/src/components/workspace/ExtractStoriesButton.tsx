@@ -69,6 +69,12 @@ export function ExtractStoriesButton({
         // Re-extract JSON from entries
         const updatedCards = extractJsonCardsFromEntries(entries);
 
+        // Check if tasks were actually generated
+        const nowHasTasks = hasAllTasksGenerated(updatedCards);
+        if (nowHasTasks) {
+          console.log(`Brainstorm completed: Generated tasks for ${updatedCards.length} stories.`);
+        }
+
         // Open dialog
         ExtractStoriesDialog.show({
           cards: updatedCards,
@@ -76,6 +82,8 @@ export function ExtractStoriesButton({
         });
       } catch (err) {
         console.error('Failed to complete brainstorm:', err);
+        console.warn('An error occurred while generating tasks. Showing current stories.');
+
         // Even if failed, still show current cards
         ExtractStoriesDialog.show({
           cards: extractedCards,
