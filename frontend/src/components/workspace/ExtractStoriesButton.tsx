@@ -63,9 +63,6 @@ export function ExtractStoriesButton({
         // Send message to trigger story-doc-generator and task-splitter
         await complete(extractedCards, executor);
 
-        // Wait a moment for conversation to update
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-
         // Re-extract JSON from entries
         const updatedCards = extractJsonCardsFromEntries(entries);
 
