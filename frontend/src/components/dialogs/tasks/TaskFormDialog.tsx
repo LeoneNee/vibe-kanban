@@ -88,6 +88,7 @@ type TaskFormValues = {
 const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
   const { mode, projectId } = props;
   const editMode = mode === 'edit';
+  const isStoryCreate = mode === 'create' && props.taskType === 'story';
   const modal = useModal();
   const { t } = useTranslation(['tasks', 'common']);
   const { createTask, createAndStart, updateTask } =
@@ -159,10 +160,16 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
           status: 'todo',
           executorProfileId: baseProfile,
           repoBranches: defaultRepoBranches,
-          autoStart: true,
+          autoStart: !isStoryCreate,
         };
     }
-  }, [mode, props, system.config?.executor_profile, defaultRepoBranches]);
+  }, [
+    mode,
+    props,
+    system.config?.executor_profile,
+    defaultRepoBranches,
+    isStoryCreate,
+  ]);
 
   // Form submission handler
   const handleSubmit = async ({ value }: { value: TaskFormValues }) => {
@@ -174,8 +181,8 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
             title: value.title,
             description: value.description,
             status: value.status,
-            task_type: 'task',
             parent_workspace_id: null,
+            parent_task_id: null,
             image_ids: images.length > 0 ? images.map((img) => img.id) : null,
           },
         },
@@ -190,15 +197,12 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
         description: value.description,
         status: null,
         task_type: (mode === 'create' && props.taskType) ? props.taskType : ('task' as TaskType),
-        parent_workspace_id:
-          mode === 'subtask'
-            ? props.parentTaskAttemptId
-            : mode === 'create' && props.parentTaskId
-              ? props.parentTaskId
-              : null,
+        parent_workspace_id: mode === 'subtask' ? props.parentTaskAttemptId : null,
+        parent_task_id: mode === 'create' && props.parentTaskId ? props.parentTaskId : null,
         image_ids: imageIds,
       };
-      const shouldAutoStart = value.autoStart && !forceCreateOnlyRef.current;
+      const shouldAutoStart =
+        !isStoryCreate && value.autoStart && !forceCreateOnlyRef.current;
       if (shouldAutoStart) {
         const repos = value.repoBranches.map((rb) => ({
           repo_id: rb.repoId,
@@ -505,7 +509,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
           )}
 
           {/* Create mode dropdowns */}
-          {!editMode && (
+          {!editMode && !isStoryCreate && (
             <form.Field name="autoStart" mode="array">
               {(autoStartField) => {
                 const isSingleRepo = repoBranchConfigs.length === 1;
@@ -630,7 +634,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
 
             {/* Autostart switch */}
             <div className="flex items-center gap-3">
-              {!editMode && (
+              {!editMode && !isStoryCreate && (
                 <form.Field name="autoStart">
                   {(field) => (
                     <div className="flex items-center gap-2">
