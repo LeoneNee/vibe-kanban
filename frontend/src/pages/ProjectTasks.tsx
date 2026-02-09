@@ -19,6 +19,7 @@ import { useSearch } from '@/contexts/SearchContext';
 import { useProject } from '@/contexts/ProjectContext';
 import { useTaskAttempts } from '@/hooks/useTaskAttempts';
 import { useTaskAttemptWithSession } from '@/hooks/useTaskAttempt';
+import { useTask } from '@/hooks/useTask';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useBranchStatus, useAttemptExecution } from '@/hooks';
 import { paths } from '@/lib/paths';
@@ -181,6 +182,11 @@ export function ProjectTasks() {
     error: streamError,
   } = storyId ? storyTasksResult : projectTasksResult;
 
+  // Fetch parent story data when storyId is present (for breadcrumb)
+  const { data: parentStory } = useTask(storyId || '', {
+    enabled: !!storyId,
+  });
+
   const selectedTask = useMemo(
     () => (taskId ? (tasksById[taskId] ?? null) : null),
     [taskId, tasksById]
@@ -287,17 +293,25 @@ export function ProjectTasks() {
     if (!isLatest) return;
     if (isAttemptsLoading) return;
 
+    // Preserve story context when navigating
     if (!latestAttemptId) {
-      navigateWithSearch(paths.task(projectId, taskId), { replace: true });
+      const taskPath = storyId
+        ? paths.storyTask(projectId, storyId, taskId)
+        : paths.task(projectId, taskId);
+      navigateWithSearch(taskPath, { replace: true });
       return;
     }
 
-    navigateWithSearch(paths.attempt(projectId, taskId, latestAttemptId), {
+    const attemptPath = storyId
+      ? paths.storyAttempt(projectId, storyId, taskId, latestAttemptId)
+      : paths.attempt(projectId, taskId, latestAttemptId);
+    navigateWithSearch(attemptPath, {
       replace: true,
     });
   }, [
     projectId,
     taskId,
+    storyId,
     isLatest,
     isAttemptsLoading,
     latestAttemptId,
@@ -308,9 +322,14 @@ export function ProjectTasks() {
   useEffect(() => {
     if (!projectId || !taskId || isLoading) return;
     if (selectedTask === null) {
-      navigate(`/projects/${projectId}/tasks`, { replace: true });
+      // Navigate back to tasks list (with story context if applicable)
+      if (storyId) {
+        navigate(paths.storyTasks(projectId, storyId), { replace: true });
+      } else {
+        navigate(`/projects/${projectId}/tasks`, { replace: true });
+      }
     }
-  }, [projectId, taskId, isLoading, selectedTask, navigate]);
+  }, [projectId, taskId, storyId, isLoading, selectedTask, navigate]);
 
   const effectiveAttemptId = attemptId === 'latest' ? undefined : attemptId;
   const isTaskView = !!taskId && !effectiveAttemptId;
@@ -590,27 +609,39 @@ export function ProjectTasks() {
 
   const handleClosePanel = useCallback(() => {
     if (projectId) {
-      navigate(`/projects/${projectId}/tasks`, { replace: true });
+      if (storyId) {
+        navigate(paths.storyTasks(projectId, storyId), { replace: true });
+      } else {
+        navigate(`/projects/${projectId}/tasks`, { replace: true });
+      }
     }
-  }, [projectId, navigate]);
+  }, [projectId, storyId, navigate]);
 
   const handleViewTaskDetails = useCallback(
     (task: Task, attemptIdToShow?: string) => {
       if (!projectId) return;
 
+      // When viewing tasks under a story, preserve the story context
+      const taskPath = storyId
+        ? paths.storyTask(projectId, storyId, task.id)
+        : paths.task(projectId, task.id);
+
       // If beta_workspaces is enabled, always navigate to task view (not attempt)
       if (config?.beta_workspaces) {
-        navigateWithSearch(paths.task(projectId, task.id));
+        navigateWithSearch(taskPath);
         return;
       }
 
       if (attemptIdToShow) {
-        navigateWithSearch(paths.attempt(projectId, task.id, attemptIdToShow));
+        const attemptPath = storyId
+          ? paths.storyAttempt(projectId, storyId, task.id, attemptIdToShow)
+          : paths.attempt(projectId, task.id, attemptIdToShow);
+        navigateWithSearch(attemptPath);
       } else {
-        navigateWithSearch(`${paths.task(projectId, task.id)}/attempts/latest`);
+        navigateWithSearch(`${taskPath}/attempts/latest`);
       }
     },
-    [projectId, navigateWithSearch, config?.beta_workspaces]
+    [projectId, storyId, navigateWithSearch, config?.beta_workspaces]
   );
 
   const selectNextTask = useCallback(() => {
@@ -718,8 +749,8 @@ export function ProjectTasks() {
           title: task.title,
           description: task.description,
           status: newStatus,
-          task_type: task.task_type ?? 'task',
           parent_workspace_id: task.parent_workspace_id,
+          parent_task_id: task.parent_task_id,
           image_ids: null,
         });
       } catch (err) {
@@ -806,9 +837,7 @@ export function ProjectTasks() {
         isTaskView ? (
           <TaskPanelHeaderActions
             task={selectedTask}
-            onClose={() =>
-              navigate(`/projects/${projectId}/tasks`, { replace: true })
-            }
+            onClose={handleClosePanel}
           />
         ) : (
           <AttemptHeaderActions
@@ -816,9 +845,7 @@ export function ProjectTasks() {
             onModeChange={setMode}
             task={selectedTask}
             attempt={attempt ?? null}
-            onClose={() =>
-              navigate(`/projects/${projectId}/tasks`, { replace: true })
-            }
+            onClose={handleClosePanel}
           />
         )
       }
@@ -826,6 +853,22 @@ export function ProjectTasks() {
       <div className="mx-auto w-full">
         <Breadcrumb>
           <BreadcrumbList>
+            {/* Show story breadcrumb if in story context */}
+            {storyId && parentStory && (
+              <>
+                <BreadcrumbItem>
+                  <BreadcrumbLink
+                    className="cursor-pointer hover:underline"
+                    onClick={() => {
+                      navigate(paths.storyTasks(projectId!, storyId));
+                    }}
+                  >
+                    {truncateTitle(parentStory.title, 15)}
+                  </BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+              </>
+            )}
             <BreadcrumbItem>
               {isTaskView ? (
                 <BreadcrumbPage>
@@ -834,9 +877,12 @@ export function ProjectTasks() {
               ) : (
                 <BreadcrumbLink
                   className="cursor-pointer hover:underline"
-                  onClick={() =>
-                    navigateWithSearch(paths.task(projectId!, taskId!))
-                  }
+                  onClick={() => {
+                    const taskPath = storyId
+                      ? paths.storyTask(projectId!, storyId, taskId!)
+                      : paths.task(projectId!, taskId!);
+                    navigateWithSearch(taskPath);
+                  }}
                 >
                   {truncateTitle(selectedTask?.title)}
                 </BreadcrumbLink>
