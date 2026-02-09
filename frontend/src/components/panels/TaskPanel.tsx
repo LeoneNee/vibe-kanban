@@ -28,6 +28,9 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
   const { config } = useUserSystem();
   const workflow = useTaskWorkflow(task);
 
+  // Extract story context from task
+  const storyId = task?.parent_task_id;
+
   // 自动导航到 brainstorm（仅首次）
   useEffect(() => {
     if (!task || !projectId || !navigate) return;
@@ -227,9 +230,10 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
                   if (config?.beta_workspaces) {
                     navigate(`/workspaces/${attempt.id}`);
                   } else if (projectId) {
-                    navigate(
-                      paths.attempt(projectId, attempt.task_id, attempt.id)
-                    );
+                    const attemptPath = storyId
+                      ? paths.storyAttempt(projectId, storyId, attempt.task_id, attempt.id)
+                      : paths.attempt(projectId, attempt.task_id, attempt.id);
+                    navigate(attemptPath);
                   }
                 }}
                 isLoading={isParentLoading}
@@ -254,7 +258,10 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
                   if (config?.beta_workspaces) {
                     navigate(`/workspaces/${attempt.id}`);
                   } else if (projectId && task.id) {
-                    navigate(paths.attempt(projectId, task.id, attempt.id));
+                    const attemptPath = storyId
+                      ? paths.storyAttempt(projectId, storyId, task.id, attempt.id)
+                      : paths.attempt(projectId, task.id, attempt.id);
+                    navigate(attemptPath);
                   }
                 }}
                 emptyState={t('taskPanel.noAttempts')}
