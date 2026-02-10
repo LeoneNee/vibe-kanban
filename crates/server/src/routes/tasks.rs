@@ -14,6 +14,7 @@ use axum::{
 };
 use db::models::{
     image::TaskImage,
+    project_repo::ProjectRepo,
     repo::{Repo, RepoError},
     task::{CreateTask, Task, TaskType, TaskWithAttemptStatus, UpdateTask},
     workspace::{CreateWorkspace, Workspace},
@@ -175,6 +176,21 @@ async fn resolve_repo_path_for_task(pool: &sqlx::SqlitePool, task: &Task) -> Opt
     }
 
     None
+}
+
+/// Resolve the first repo path for a given project.
+/// Returns None if project has no associated repos.
+async fn resolve_repo_path_for_project(
+    pool: &sqlx::SqlitePool,
+    project_id: Uuid,
+) -> Option<PathBuf> {
+    match ProjectRepo::find_repos_for_project(pool, project_id).await {
+        Ok(repos) => repos.into_iter().next().map(|r| r.path),
+        Err(e) => {
+            tracing::debug!("Failed to find repos for project {}: {}", project_id, e);
+            None
+        }
+    }
 }
 
 pub async fn create_task(
@@ -587,4 +603,71 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
 
     // mount under /projects/:project_id/tasks
     Router::new().nest("/tasks", inner)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::SqlitePool;
+    use uuid::Uuid;
+
+    #[sqlx::test(migrations = "../db/migrations")]
+    async fn test_resolve_repo_path_for_project_returns_first_repo(pool: SqlitePool) {
+        // Create test project
+        let project_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO projects (id, name, created_at, updated_at) VALUES (?, ?, datetime('now'), datetime('now'))"
+        )
+        .bind(project_id)
+        .bind("Test Project")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Create test repo
+        let repo_id = Uuid::new_v4();
+        let repo_path = "/tmp/test-repo";
+        sqlx::query(
+            "INSERT INTO repos (id, name, display_name, path, default_target_branch, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+        )
+        .bind(repo_id)
+        .bind("test-repo")
+        .bind("Test Repo")
+        .bind(repo_path)
+        .bind("main")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Link repo to project
+        let project_repo_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO project_repos (id, project_id, repo_id) VALUES (?, ?, ?)")
+            .bind(project_repo_id)
+            .bind(project_id)
+            .bind(repo_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Test the function
+        let result = resolve_repo_path_for_project(&pool, project_id).await;
+        assert!(result.is_some(), "Expected Some, got None");
+        assert_eq!(result.unwrap().to_str().unwrap(), repo_path);
+    }
+
+    #[sqlx::test(migrations = "../db/migrations")]
+    async fn test_resolve_repo_path_for_project_returns_none_when_no_repos(pool: SqlitePool) {
+        let project_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO projects (id, name, created_at, updated_at) VALUES (?, ?, datetime('now'), datetime('now'))"
+        )
+        .bind(project_id)
+        .bind("Test Project No Repos")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let result = resolve_repo_path_for_project(&pool, project_id).await;
+        assert!(result.is_none());
+    }
 }
