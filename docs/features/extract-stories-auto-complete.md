@@ -205,3 +205,32 @@ pnpm run lint
 - 依赖 entries 数组长度变化来检测响应，在极少数情况下可能不够精确
 - 60 秒超时是固定的，不能根据 stories 数量动态调整
 - Console 日志可能不够直观，建议后续添加 UI 通知
+
+## 文档生成
+
+### Story 文档自动生成
+
+当通过 ExtractStoriesDialog 创建 Story 时，系统会自动：
+
+1. 查找 Project 关联的第一个 repository
+2. 在该 repo 的 `docs/stories/{story-id}-{slug}/` 目录下生成 `README.md`
+3. 文档包含：
+   - Story 标题和 ID
+   - 状态和创建时间
+   - 描述内容
+   - Tasks 占位符（子任务创建时更新）
+   - 更新日志
+
+### 文档路径规则
+
+- **Story 文档**: `{repo_root}/docs/stories/{story_id}-{slug}/README.md`
+- **Task 文档**: `{repo_root}/docs/stories/{story_id}-{slug}/{task_id}-{slug}.md`
+
+### 故障处理
+
+如果 Story 创建时未生成文档，可能原因：
+
+- Project 未关联任何 repository
+- Repository 路径不存在或无写入权限
+
+查看后端日志获取详细错误信息。
