@@ -18,7 +18,7 @@ vi.mock('@/components/ConfigProvider', () => ({
 }));
 
 vi.mock('@/hooks/useTaskWorkflow', () => ({
-  useTaskWorkflow: (task: any) => {
+  useTaskWorkflow: (task: Task | null) => {
     if (!task?.description && task?.parent_task_id) {
       return {
         progress: 25,

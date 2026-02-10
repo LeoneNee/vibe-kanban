@@ -5,12 +5,13 @@ import { useTask } from '@/hooks/useTask';
 import { Button } from '@/components/ui/button';
 import { tasksApi } from '@/lib/api';
 import type { WorkspaceWithSession } from '@/types/attempt';
+import type { UnifiedLogEntry } from '@/types/logs';
 
 interface SaveBrainstormResultButtonProps {
   workspaceWithSession: WorkspaceWithSession | undefined;
 }
 
-function extractMarkdownContent(entries: any[]): string | null {
+function extractMarkdownContent(entries: UnifiedLogEntry[]): string | null {
   // 从后往前查找最后一条助手消息
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];

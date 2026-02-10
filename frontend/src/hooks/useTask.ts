@@ -7,10 +7,13 @@ export const taskKeys = {
   byId: (id: string) => [...taskKeys.all, id] as const,
 };
 
-export function useTask(taskId: string, options?: { enabled?: boolean }) {
+export function useTask(
+  taskId: string | undefined,
+  options?: { enabled?: boolean }
+) {
   return useQuery<Task>({
-    queryKey: taskKeys.byId(taskId),
-    queryFn: () => tasksApi.getById(taskId),
+    queryKey: taskKeys.byId(taskId!),
+    queryFn: () => tasksApi.getById(taskId!),
     enabled: options?.enabled ?? !!taskId,
   });
 }
