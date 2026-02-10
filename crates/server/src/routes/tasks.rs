@@ -244,9 +244,20 @@ pub async fn create_task(
         )
         .await;
 
-    // Generate task doc for Task-type tasks (Stories skip - no workspace/repo available yet)
-    if task.task_type == TaskType::Task {
-        try_generate_task_doc(&deployment.db().pool, &task, None).await;
+    // Generate task doc based on task type
+    match task.task_type {
+        TaskType::Story => {
+            // For Story: query project's first repo and generate doc
+            if let Some(repo_path) = resolve_repo_path_for_project(&deployment.db().pool, task.project_id).await {
+                try_generate_task_doc(&deployment.db().pool, &task, Some(repo_path)).await;
+            } else {
+                tracing::warn!("Story {} has no associated repos, skipping doc generation", task.id);
+            }
+        }
+        TaskType::Task => {
+            // For Task: try to resolve repo from parent
+            try_generate_task_doc(&deployment.db().pool, &task, None).await;
+        }
     }
 
     Ok(ResponseJson(ApiResponse::success(task)))
