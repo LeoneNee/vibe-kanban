@@ -148,28 +148,152 @@ TaskKanbanBoard 顶部增加一排筛选芯片：
 
 brainstorming-task 技能调用时，检查当前 Task 的 `tag` 字段。如果非空，从配置中取出对应注入文本，拼接到发送给 AI 的 prompt 之前。
 
-## 七、改动范围
+## 七、自动化 Task 生成链的标签支持
 
-| 层 | 文件 | 改动内容 |
-|----|------|---------|
-| DB | `crates/db/migrations/新迁移.sql` | tasks 表加 tag 字段 |
-| Rust 模型 | `crates/db/src/models/task.rs` | TaskTag 枚举，Task/CreateTask/UpdateTask 扩展 |
-| API | `crates/server/src/routes/tasks.rs` | 创建/更新接口支持 tag 字段 |
-| 类型同步 | `shared/types.ts` | 自动生成 |
-| 前端配置 | `frontend/src/config/task-tags.ts`（新建） | 标签颜色、显示名、注入文本定义 |
-| 前端组件 | `frontend/src/components/tasks/TaskCard.tsx` | 左侧色条 + tooltip |
-| 前端组件 | `frontend/src/components/dialogs/tasks/TaskFormDialog.tsx` | 标签选择器 |
-| 前端组件 | `frontend/src/components/tasks/TaskKanbanBoard.tsx` | 筛选芯片 |
-| 技能 | `brainstorming-task/skill.md` | 读取 tag 拼接 prompt 前缀 |
-| SQLx | 离线查询缓存 | prepare-db 更新 |
+### 问题
 
-## 八、不改动
+Task 不仅通过 TaskFormDialog 手动创建，还有一条完整的自动化生成链：
+
+```
+brainstorming-cards → story-doc-generator → task-splitter → ExtractStoriesDialog → API
+```
+
+task-splitter 技能分析 Story 文档后建议 Task 拆分，当前输出 `{title, description}`，需要扩展为 `{title, description, tag}`。
+
+### 需要改动的环节
+
+#### 7.1 task-splitter 技能
+
+在 skill.md 中增加标签判断指令：
+
+- 定义 7 个标签的判断标准（基于 Task 内容自动推荐）
+- 输出格式从 `{title, description}` 扩展为 `{title, description, tag}`
+- 标签判断规则：
+  - 涉及页面、组件、样式、布局 → `ui-design`
+  - 涉及接口、端点、数据模型、CRUD → `api`
+  - 涉及问题修复、异常处理 → `bugfix`
+  - 涉及代码优化、结构调整 → `refactor`
+  - 涉及部署、配置、CI/CD、环境 → `infra`
+  - 涉及文档撰写、README、注释 → `docs`
+  - 涉及测试编写、覆盖率、断言 → `test`
+  - 无法明确归类 → `tag` 字段为 null
+
+#### 7.2 brainstorming-cards 技能
+
+更新编排器的输出 schema，确认 tasks 数组中的对象包含 `tag` 字段。
+
+#### 7.3 BrainstormTask 前端类型
+
+```typescript
+// 之前
+type BrainstormTask = {
+  title: string;
+  description?: string;
+};
+
+// 之后
+type BrainstormTask = {
+  title: string;
+  description?: string;
+  tag?: TaskTag;
+};
+```
+
+#### 7.4 extractJsonCards 解析逻辑
+
+JSON 卡片解析工具需要识别并保留 task 对象中的 `tag` 字段。
+
+#### 7.5 ExtractStoriesDialog
+
+创建子 Task 时，从 `card.tasks[i].tag` 读取标签并传入 API：
+
+```typescript
+// 之前
+{
+  project_id: projectId,
+  title: task.title,
+  description: task.description || null,
+  task_type: 'task',
+  parent_task_id: story.id,
+  // ...
+}
+
+// 之后
+{
+  project_id: projectId,
+  title: task.title,
+  description: task.description || null,
+  tag: task.tag || null,       // ← 新增
+  task_type: 'task',
+  parent_task_id: story.id,
+  // ...
+}
+```
+
+#### 7.6 MCP create_task
+
+Claude 通过 MCP 创建 Task 时，`CreateTaskRequest` 增加可选 `tag` 参数：
+
+```rust
+struct CreateTaskRequest {
+    project_id: Uuid,
+    title: String,
+    description: Option<String>,
+    tag: Option<TaskTag>,        // ← 新增
+}
+```
+
+### Task 创建路径完整覆盖清单
+
+| 创建路径 | 标签来源 | 改动 |
+|----------|---------|------|
+| TaskFormDialog（手动创建） | 用户选择（色块按钮） | 新增标签选择器 |
+| ExtractStoriesDialog（brainstorm 链） | AI 推荐（task-splitter 输出） | 传递 tag 字段 |
+| StoryBulkCreateDialog（批量创建） | 不需要（只创建 Story） | 无改动 |
+| MCP create_task（AI 编程创建） | AI 判断 | 增加 tag 参数 |
+| create-and-start API | 同 TaskFormDialog | 同上 |
+
+## 八、改动范围（完整）
+
+### 后端
+
+| 文件 | 改动内容 |
+|------|---------|
+| `crates/db/migrations/新迁移.sql` | tasks 表加 tag 字段 |
+| `crates/db/src/models/task.rs` | TaskTag 枚举，Task/CreateTask/UpdateTask 扩展 |
+| `crates/server/src/routes/tasks.rs` | 创建/更新接口支持 tag 字段 |
+| `crates/server/src/mcp/task_server.rs` | MCP create_task 增加 tag 参数 |
+| SQLx 离线缓存 | prepare-db 更新 |
+
+### 前端
+
+| 文件 | 改动内容 |
+|------|---------|
+| `shared/types.ts` | 自动生成（TaskTag 类型 + Task/CreateTask 扩展） |
+| `frontend/src/config/task-tags.ts`（新建） | 标签颜色、显示名、注入文本、判断规则定义 |
+| `frontend/src/components/tasks/TaskCard.tsx` | 左侧色条 + tooltip |
+| `frontend/src/components/dialogs/tasks/TaskFormDialog.tsx` | 标签选择器 |
+| `frontend/src/components/tasks/TaskKanbanBoard.tsx` | 筛选芯片 |
+| `frontend/src/components/dialogs/stories/ExtractStoriesDialog.tsx` | 创建子 Task 时传递 tag |
+| `frontend/src/utils/extractJsonCards.ts`（或相关解析文件） | BrainstormTask 类型扩展 + 解析 tag |
+
+### 技能
+
+| 文件 | 改动内容 |
+|------|---------|
+| `task-splitter/skill.md` | 输出格式加 tag 字段 + 标签判断规则 |
+| `brainstorming-cards/skill.md` | 更新输出 schema 说明 |
+| `brainstorming-task/skill.md` | 读取 tag 拼接 prompt 前缀 |
+
+## 九、不改动
 
 - 现有 Tag 系统（TagManager、TagEditDialog、tags API）— 独立概念，互不影响
 - Story 数据模型 — 标签仅用于 Task 级别
 - 现有工作流状态机 — 标签不影响 WorkflowState 转换
+- story-doc-generator 技能 — 生成 Story 文档，不涉及 Task 标签
+- StoryBulkCreateDialog — 只创建 Story，不打标签
 
-## 九、非目标
+## 十、非目标
 
 - 标签统计/报表
 - 标签与优先级/复杂度联动
