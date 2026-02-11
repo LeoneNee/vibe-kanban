@@ -436,6 +436,14 @@ export const tasksApi = {
     });
     return handleApiResponse<void>(response);
   },
+
+  writeDoc: async (taskId: string, content: string): Promise<void> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/doc`, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    });
+    return handleApiResponse<void>(response);
+  },
 };
 
 // Sessions API

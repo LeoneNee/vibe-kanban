@@ -180,7 +180,7 @@ async fn resolve_repo_path_for_task(pool: &sqlx::SqlitePool, task: &Task) -> Opt
 
 /// Resolve the first repo path for a given project.
 /// Returns None if project has no associated repos.
-async fn resolve_repo_path_for_project(
+pub(crate) async fn resolve_repo_path_for_project(
     pool: &sqlx::SqlitePool,
     project_id: Uuid,
 ) -> Option<PathBuf> {
@@ -601,7 +601,9 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .route("/", get(get_task))
         .route(
             "/doc",
-            get(task_docs::get_task_doc).patch(task_docs::update_task_doc),
+            get(task_docs::get_task_doc)
+                .put(task_docs::write_task_doc)
+                .patch(task_docs::update_task_doc),
         )
         .merge(task_actions_router)
         .layer(from_fn_with_state(deployment.clone(), load_task_middleware));

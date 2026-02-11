@@ -354,6 +354,8 @@ export const Actions = {
         ctx.queryClient.invalidateQueries({
           queryKey: workspaceSummaryKeys.all,
         });
+        // Also invalidate stories queries
+        ctx.queryClient.invalidateQueries({ queryKey: ['stories'] });
 
         // Navigate away if we deleted the current workspace
         if (isCurrentWorkspace) {

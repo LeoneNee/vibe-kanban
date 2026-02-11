@@ -1123,6 +1123,19 @@ impl ContainerService for LocalContainerService {
         env.insert("VK_WORKSPACE_ID", workspace.id.to_string());
         env.insert("VK_WORKSPACE_BRANCH", &workspace.branch);
 
+        // Load ANTHROPIC_* variables from .env file to override shell environment
+        // This allows per-project configuration while preserving user's global shell settings
+        if let Ok(dotenv_vars) = dotenvy::dotenv_iter() {
+            for item in dotenv_vars.flatten() {
+                let (key, value) = item;
+                // Only override Anthropic-related variables from .env
+                if key.starts_with("ANTHROPIC_") {
+                    tracing::debug!("Loaded {} from .env file", &key);
+                    env.insert(key, value);
+                }
+            }
+        }
+
         // Create the child and stream, add to execution tracker with timeout
         let mut spawned = tokio::time::timeout(
             Duration::from_secs(30),

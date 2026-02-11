@@ -19,6 +19,8 @@ export function useTaskMutations(projectId?: string) {
 
   const invalidateQueries = (taskId?: string) => {
     queryClient.invalidateQueries({ queryKey: taskKeys.all });
+    // Also invalidate stories queries since stories are a subset of tasks
+    queryClient.invalidateQueries({ queryKey: ['stories'] });
     if (taskId) {
       queryClient.invalidateQueries({ queryKey: taskKeys.byId(taskId) });
     }

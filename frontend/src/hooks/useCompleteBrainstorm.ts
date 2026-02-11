@@ -62,7 +62,8 @@ export function useCompleteBrainstorm({
 
 1. 使用 /story-doc-generator 为每个 Story 生成文档（不需要展示文档内容）
 2. 使用 /task-splitter 为每个 Story 拆分任务
-3. 输出包含 tasks 数组的完整 Story JSON
+3. 确保每个 Story 的 doc_content 字段包含完整的 7 章节文档
+4. 输出包含 tasks 和 doc_content 的完整 Story JSON
 
 当前的 Story JSON：
 \`\`\`json

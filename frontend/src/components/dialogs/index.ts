@@ -38,6 +38,12 @@ export {
   type TaskFormDialogProps,
 } from './tasks/TaskFormDialog';
 
+// Story-related dialogs
+export {
+  StoryBulkCreateDialog,
+  type StoryBulkCreateDialogProps,
+} from './stories/StoryBulkCreateDialog';
+
 export { CreatePRDialog } from './tasks/CreatePRDialog';
 export {
   EditorSelectionDialog,

@@ -16,7 +16,7 @@ describe('slugify', () => {
   });
 
   it('removes non-alphanumeric characters', () => {
-    expect(slugify('Hello@World\!')).toBe('hello-world');
+    expect(slugify('Hello@World!')).toBe('hello-world');
   });
 });
 

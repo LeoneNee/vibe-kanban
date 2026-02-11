@@ -1,4 +1,5 @@
-import { Outlet, useSearchParams } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Outlet, useSearchParams, useLocation, useNavigate } from 'react-router-dom';
 import { DevBanner } from '@/components/DevBanner';
 import { Navbar } from '@/components/layout/Navbar';
 
@@ -6,6 +7,16 @@ export function NormalLayout() {
   const [searchParams] = useSearchParams();
   const view = searchParams.get('view');
   const shouldHideNavbar = view === 'preview' || view === 'diffs';
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Redirect /projects/:projectId to /projects/:projectId/stories
+  useEffect(() => {
+    const match = location.pathname.match(/^\/projects\/([^/]+)$/);
+    if (match) {
+      navigate(`${location.pathname}/stories`, { replace: true });
+    }
+  }, [location.pathname, navigate]);
 
   return (
     <>

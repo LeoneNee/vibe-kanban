@@ -23,8 +23,14 @@
 
 ## Overview
 
-AI coding agents are increasingly writing the world's code and human engineers now spend the majority of their time planning, reviewing, and orchestrating tasks. Vibe Kanban streamlines this process, enabling you to:
+AI coding agents are increasingly writing the world's code and human engineers now spend the majority of their time planning, reviewing, and orchestrating tasks. Vibe Kanban streamlines this process with a Story/Task-driven development workflow, enabling you to:
 
+- **Story/Task 看板管理** - 使用结构化的 Story 和 Task 组织开发工作
+- **Brainstorm 头脑风暴** - 通过 AI 辅助生成 Story 卡片和需求文档
+- **自动文档生成** - 为 Story 自动生成完整的需求文档（7个章节）
+- **智能 Task 拆分** - 将 Story 拆分为可执行的 Task，包含技术方案
+- **多 AI 协作编排** - 协调 Claude Code、Gemini CLI、Codex 完成完整工作流
+- **链式自动化流程** - Extract Stories 时自动完成文档生成和任务拆分
 - Easily switch between different coding agents
 - Orchestrate the execution of multiple coding agents in parallel or in sequence
 - Quickly review work and start dev servers

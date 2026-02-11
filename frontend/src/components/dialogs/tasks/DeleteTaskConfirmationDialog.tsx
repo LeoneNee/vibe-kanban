@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
-import { tasksApi } from '@/lib/api';
+import { useTaskMutations } from '@/hooks/useTaskMutations';
 import type { TaskWithAttemptStatus } from 'shared/types';
 import NiceModal, { useModal } from '@ebay/nice-modal-react';
 import { defineModal } from '@/lib/modals';
@@ -20,25 +20,22 @@ export interface DeleteTaskConfirmationDialogProps {
 }
 
 const DeleteTaskConfirmationDialogImpl =
-  NiceModal.create<DeleteTaskConfirmationDialogProps>(({ task }) => {
+  NiceModal.create<DeleteTaskConfirmationDialogProps>(({ task, projectId }) => {
     const modal = useModal();
-    const [isDeleting, setIsDeleting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const { deleteTask } = useTaskMutations(projectId);
 
     const handleConfirmDelete = async () => {
-      setIsDeleting(true);
       setError(null);
 
       try {
-        await tasksApi.delete(task.id);
+        await deleteTask.mutateAsync(task.id);
         modal.resolve();
         modal.hide();
       } catch (err: unknown) {
         const errorMessage =
           err instanceof Error ? err.message : 'Failed to delete task';
         setError(errorMessage);
-      } finally {
-        setIsDeleting(false);
       }
     };
 
@@ -76,7 +73,7 @@ const DeleteTaskConfirmationDialogImpl =
             <Button
               variant="outline"
               onClick={handleCancelDelete}
-              disabled={isDeleting}
+              disabled={deleteTask.isPending}
               autoFocus
             >
               Cancel
@@ -84,9 +81,9 @@ const DeleteTaskConfirmationDialogImpl =
             <Button
               variant="destructive"
               onClick={handleConfirmDelete}
-              disabled={isDeleting}
+              disabled={deleteTask.isPending}
             >
-              {isDeleting ? 'Deleting...' : 'Delete Task'}
+              {deleteTask.isPending ? 'Deleting...' : 'Delete Task'}
             </Button>
           </DialogFooter>
         </DialogContent>

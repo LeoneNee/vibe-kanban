@@ -4054,6 +4054,7 @@ dependencies = [
  "command-group",
  "db",
  "deployment",
+ "dotenvy",
  "executors",
  "futures",
  "globwalk",

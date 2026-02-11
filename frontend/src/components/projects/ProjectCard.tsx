@@ -125,7 +125,7 @@ function ProjectCard({ project, isFocused, setError, onEdit }: Props) {
                 <DropdownMenuItem
                   onClick={(e) => {
                     e.stopPropagation();
-                    navigate(`/projects/${project.id}`);
+                    navigate(`/projects/${project.id}/stories`);
                   }}
                 >
                   <ExternalLink className="mr-2 h-4 w-4" />

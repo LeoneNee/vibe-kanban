@@ -14,41 +14,7 @@ import { Button } from '@/components/ui/button';
 function buildBrainstormPrompt(projectName: string = 'this project'): string {
   return `/brainstorming-cards
 
-帮我为「${projectName}」拆解需求，生成 Story 卡片。
-
-## 你的任务
-
-1. **先问我 2-3 个关键问题**，了解项目背景、目标用户、核心功能
-2. **判断需求规模**：如果用户描述的是一个很大的功能，应该拆成多个独立的 Story
-3. **生成 Story 列表**，每个 Story 包含具体的 Tasks
-
-## 输出格式
-
-当你准备好生成时，请用以下 JSON 格式：
-
-\`\`\`json
-[
-  {
-    "title": "Story 标题（用户可感知的功能点）",
-    "description": "这个 Story 要实现什么",
-    "priority": "high/medium/low",
-    "complexity": 3,
-    "tasks": [
-      { "title": "具体技术任务1" },
-      { "title": "具体技术任务2" }
-    ]
-  }
-]
-\`\`\`
-
-## 拆分原则
-
-- **Story** = 用户可感知的独立功能，可以单独交付和验收
-- **Task** = 实现 Story 需要的具体技术工作
-- 一个 Story 通常包含 2-5 个 Tasks
-- 如果一个需求太大（超过 1-2 周工作量），应该拆成多个 Story
-
----
+项目：${projectName}
 
 项目背景：
 `;
@@ -177,6 +143,7 @@ export function StoryBrainstormLaunch() {
         status: null,
         task_type: 'story',
         parent_workspace_id: null,
+        parent_task_id: null,
         image_ids: null,
       },
       executor_profile_id: effectiveProfile,

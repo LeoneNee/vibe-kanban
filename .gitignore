@@ -88,3 +88,8 @@ vibe-kanban-cloud/
 
 # Git worktrees
 .worktrees/
+
+# Claude and AI tooling
+.claude.backup/
+.orchestrator/
+.pnpm-store/

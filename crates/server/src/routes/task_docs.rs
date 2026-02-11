@@ -15,7 +15,7 @@ use services::task_doc::{
 use tokio::fs;
 use ts_rs::TS;
 
-use crate::{DeploymentImpl, error::ApiError};
+use crate::{DeploymentImpl, error::ApiError, routes::tasks::resolve_repo_path_for_project};
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -155,4 +155,51 @@ pub async fn update_task_doc(
         .map_err(ApiError::Io)?;
 
     Ok(StatusCode::OK)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WriteTaskDocInput {
+    pub content: String,
+}
+
+/// PUT /api/tasks/{task_id}/doc — 全文替换任务文档
+pub async fn write_task_doc(
+    Extension(task): Extension<Task>,
+    State(deployment): State<DeploymentImpl>,
+    Json(input): Json<WriteTaskDocInput>,
+) -> Result<StatusCode, ApiError> {
+    let pool = &deployment.db().pool;
+
+    // 根据 task_type 解析文档路径
+    let doc_path = match task.task_type {
+        TaskType::Story => {
+            // Story 可能没有 workspace，从 project repo 解析路径
+            let repo_path = resolve_repo_path_for_project(pool, task.project_id)
+                .await
+                .ok_or_else(|| {
+                    ApiError::BadRequest("No repo found for project".to_string())
+                })?;
+            get_task_doc_path(&task, None, &repo_path)
+        }
+        TaskType::Task => {
+            let parent_story = get_parent_story_for_task(pool, &task).await?;
+            let (_workspace, repo) =
+                get_workspace_and_repo_for_task(pool, &task, parent_story.as_ref()).await?;
+            get_task_doc_path(&task, parent_story.as_ref(), &repo.path)
+        }
+    };
+
+    // 确保父目录存在
+    if let Some(parent) = doc_path.parent() {
+        fs::create_dir_all(parent)
+            .await
+            .map_err(ApiError::Io)?;
+    }
+
+    // 全文覆写
+    fs::write(&doc_path, &input.content)
+        .await
+        .map_err(ApiError::Io)?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

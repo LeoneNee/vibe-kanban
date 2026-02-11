@@ -13,6 +13,7 @@ export type BrainstormCard = {
   complexity?: number; // 1-5
   notes?: string;
   tasks?: BrainstormTask[];
+  doc_content?: string;
 };
 
 function isValidBrainstormCard(obj: unknown): obj is BrainstormCard {
