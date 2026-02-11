@@ -326,59 +326,72 @@ async fn run_session_inner(
         },
     };
 
-    log_writer
-        .log_event(&OpencodeExecutorEvent::SessionStart {
-            session_id: session_id.clone(),
-        })
-        .await?;
+    // Wrap all post-creation work in an async block to guarantee session cleanup.
+    // `return` inside the block exits the block (not the outer function), ensuring
+    // close_session always runs regardless of success, error, or cancellation.
+    let result: Result<(), ExecutorError> = async {
+        log_writer
+            .log_event(&OpencodeExecutorEvent::SessionStart {
+                session_id: session_id.clone(),
+            })
+            .await?;
 
-    let model = config.model.as_deref().and_then(parse_model);
+        let model = config.model.as_deref().and_then(parse_model);
 
-    let (control_tx, mut control_rx) = mpsc::unbounded_channel::<ControlEvent>();
+        let (control_tx, mut control_rx) = mpsc::unbounded_channel::<ControlEvent>();
 
-    let event_resp = tokio::select! {
-        _ = cancel.cancelled() => return Ok(()),
-        res = connect_event_stream(&client, &config.base_url, &config.directory, None) => res?,
-    };
-    let event_handle = tokio::spawn(spawn_event_listener(
-        EventListenerConfig {
-            client: client.clone(),
-            base_url: config.base_url.clone(),
-            directory: config.directory.clone(),
-            session_id: session_id.clone(),
-            log_writer: log_writer.clone(),
-            approvals: config.approvals.clone(),
-            auto_approve: config.auto_approve,
-            control_tx,
-            models_cache_key: config.models_cache_key.clone(),
-        },
-        event_resp,
-    ));
+        let event_resp = tokio::select! {
+            _ = cancel.cancelled() => return Ok(()),
+            res = connect_event_stream(&client, &config.base_url, &config.directory, None) => res?,
+        };
+        let event_handle = tokio::spawn(spawn_event_listener(
+            EventListenerConfig {
+                client: client.clone(),
+                base_url: config.base_url.clone(),
+                directory: config.directory.clone(),
+                session_id: session_id.clone(),
+                log_writer: log_writer.clone(),
+                approvals: config.approvals.clone(),
+                auto_approve: config.auto_approve,
+                control_tx,
+                models_cache_key: config.models_cache_key.clone(),
+            },
+            event_resp,
+        ));
 
-    let prompt_fut = Box::pin(prompt(
-        &client,
-        &config.base_url,
-        &config.directory,
-        &session_id,
-        &config.prompt,
-        model.clone(),
-        config.model_variant.clone(),
-        config.agent.clone(),
-    ));
-    let prompt_result = run_request_with_control(prompt_fut, &mut control_rx, cancel.clone()).await;
+        let prompt_fut = Box::pin(prompt(
+            &client,
+            &config.base_url,
+            &config.directory,
+            &session_id,
+            &config.prompt,
+            model.clone(),
+            config.model_variant.clone(),
+            config.agent.clone(),
+        ));
+        let prompt_result =
+            run_request_with_control(prompt_fut, &mut control_rx, cancel.clone()).await;
 
-    if cancel.is_cancelled() {
-        send_abort(&client, &config.base_url, &config.directory, &session_id).await;
+        if cancel.is_cancelled() {
+            send_abort(&client, &config.base_url, &config.directory, &session_id).await;
+            event_handle.abort();
+            return Ok(());
+        }
+
         event_handle.abort();
-        return Ok(());
+
+        prompt_result?;
+        log_writer.log_event(&OpencodeExecutorEvent::Done).await?;
+
+        Ok(())
     }
+    .await;
 
-    event_handle.abort();
+    // Always close the session for proper resource cleanup (best-effort),
+    // regardless of whether the above work succeeded, failed, or was cancelled.
+    close_session(&client, &config.base_url, &config.directory, &session_id).await;
 
-    prompt_result?;
-    log_writer.log_event(&OpencodeExecutorEvent::Done).await?;
-
-    Ok(())
+    result
 }
 
 fn build_default_headers(directory: &str, password: &str) -> HeaderMap {
@@ -520,6 +533,22 @@ pub async fn create_session(
         .await
         .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;
 
+    // Handle session limit (429 Too Many Requests)
+    if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        let body = resp.text().await.unwrap_or_default();
+        tracing::warn!("OpenCode session limit reached (HTTP 429): {body}");
+
+        // Try to close the oldest session and retry once
+        if try_recover_from_session_limit(client, base_url, directory).await {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            return create_session_inner(client, base_url, directory).await;
+        }
+
+        return Err(ExecutorError::Io(io::Error::other(format!(
+            "OpenCode session.create failed: session limit reached (HTTP 429). {body}"
+        ))));
+    }
+
     if !resp.status().is_success() {
         return Err(ExecutorError::Io(io::Error::other(format!(
             "OpenCode session.create failed: HTTP {}",
@@ -547,6 +576,21 @@ pub async fn fork_session(
         .send()
         .await
         .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;
+
+    // Handle session limit (429 Too Many Requests)
+    if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        let body = resp.text().await.unwrap_or_default();
+        tracing::warn!("OpenCode session limit reached during fork (HTTP 429): {body}");
+
+        if try_recover_from_session_limit(client, base_url, directory).await {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            return fork_session_inner(client, base_url, directory, session_id).await;
+        }
+
+        return Err(ExecutorError::Io(io::Error::other(format!(
+            "OpenCode session.fork failed: session limit reached (HTTP 429). {body}"
+        ))));
+    }
 
     if !resp.status().is_success() {
         return Err(ExecutorError::Io(io::Error::other(format!(
@@ -955,6 +999,145 @@ pub async fn send_abort(
         }
     })
     .await;
+}
+
+/// Close/delete a session on the OpenCode server.
+/// Best-effort: errors are logged at debug level but otherwise ignored.
+pub async fn close_session(
+    client: &reqwest::Client,
+    base_url: &str,
+    directory: &str,
+    session_id: &str,
+) {
+    let request = client
+        .delete(format!("{base_url}/session/{session_id}"))
+        .query(&[("directory", directory)]);
+
+    let _ = tokio::time::timeout(Duration::from_secs(5), async move {
+        match request.send().await {
+            Ok(resp) => {
+                let _ = resp.bytes().await;
+            }
+            Err(err) => {
+                tracing::debug!("Failed to close OpenCode session {session_id}: {err}");
+            }
+        }
+    })
+    .await;
+}
+
+#[derive(Debug, Deserialize)]
+struct SessionListItem {
+    id: String,
+}
+
+/// List active sessions from the OpenCode server.
+async fn list_sessions(
+    client: &reqwest::Client,
+    base_url: &str,
+    directory: &str,
+) -> Result<Vec<SessionListItem>, ExecutorError> {
+    let resp = client
+        .get(format!("{base_url}/session"))
+        .query(&[("directory", directory)])
+        .send()
+        .await
+        .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;
+
+    if !resp.status().is_success() {
+        return Err(build_response_error(resp, "session.list").await);
+    }
+
+    resp.json::<Vec<SessionListItem>>()
+        .await
+        .map_err(|err| ExecutorError::Io(io::Error::other(err)))
+}
+
+/// Try to recover from a session limit error by closing the oldest session.
+/// Returns true if a session was successfully closed and a retry is warranted.
+async fn try_recover_from_session_limit(
+    client: &reqwest::Client,
+    base_url: &str,
+    directory: &str,
+) -> bool {
+    let sessions = match list_sessions(client, base_url, directory).await {
+        Ok(s) => s,
+        Err(err) => {
+            tracing::debug!("Failed to list sessions for recovery: {err}");
+            return false;
+        }
+    };
+
+    // Close the first session in the list (oldest)
+    if let Some(oldest) = sessions.first() {
+        tracing::info!(
+            "Closing oldest session {} to free up session slot",
+            oldest.id
+        );
+        close_session(client, base_url, directory, &oldest.id).await;
+        true
+    } else {
+        false
+    }
+}
+
+/// Session creation without 429 recovery logic (used for retry after recovery).
+async fn create_session_inner(
+    client: &reqwest::Client,
+    base_url: &str,
+    directory: &str,
+) -> Result<String, ExecutorError> {
+    let resp = client
+        .post(format!("{base_url}/session"))
+        .query(&[("directory", directory)])
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(ExecutorError::Io(io::Error::other(format!(
+            "OpenCode session.create failed: HTTP {status} {body}"
+        ))));
+    }
+
+    let session = resp
+        .json::<SessionResponse>()
+        .await
+        .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;
+    Ok(session.id)
+}
+
+/// Session fork without 429 recovery logic (used for retry after recovery).
+async fn fork_session_inner(
+    client: &reqwest::Client,
+    base_url: &str,
+    directory: &str,
+    session_id: &str,
+) -> Result<String, ExecutorError> {
+    let resp = client
+        .post(format!("{base_url}/session/{session_id}/fork"))
+        .query(&[("directory", directory)])
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(ExecutorError::Io(io::Error::other(format!(
+            "OpenCode session.fork failed: HTTP {status} {body}"
+        ))));
+    }
+
+    let session = resp
+        .json::<SessionResponse>()
+        .await
+        .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;
+    Ok(session.id)
 }
 
 fn parse_model(model: &str) -> Option<ModelSpec> {
@@ -1419,5 +1602,107 @@ async fn request_permission_approval(
         Err(err) => ApprovalStatus::Denied {
             reason: Some(format!("Approval request failed: {err}")),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn test_create_session_success() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/session"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"id": "sess-abc-123"})),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let result = create_session(&client, &mock_server.uri(), "/tmp/test").await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "sess-abc-123");
+    }
+
+    #[tokio::test]
+    async fn test_create_session_429_recovery() {
+        let mock_server = MockServer::start().await;
+
+        // First call: 429
+        Mock::given(method("POST"))
+            .and(path("/session"))
+            .respond_with(ResponseTemplate::new(429).set_body_string("session limit reached"))
+            .up_to_n_times(1)
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        // list_sessions returns one session
+        Mock::given(method("GET"))
+            .and(path("/session"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!([{"id": "old-sess-1"}])),
+            )
+            .mount(&mock_server)
+            .await;
+
+        // close oldest session
+        Mock::given(method("DELETE"))
+            .and(path("/session/old-sess-1"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock_server)
+            .await;
+
+        // Retry: success
+        Mock::given(method("POST"))
+            .and(path("/session"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"id": "new-sess-2"})),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let result = create_session(&client, &mock_server.uri(), "/tmp/test").await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "new-sess-2");
+    }
+
+    #[tokio::test]
+    async fn test_create_session_429_no_recovery() {
+        let mock_server = MockServer::start().await;
+
+        // 429 response
+        Mock::given(method("POST"))
+            .and(path("/session"))
+            .respond_with(ResponseTemplate::new(429).set_body_string("session limit"))
+            .mount(&mock_server)
+            .await;
+
+        // list_sessions returns empty (nothing to close)
+        Mock::given(method("GET"))
+            .and(path("/session"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!([])),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let result = create_session(&client, &mock_server.uri(), "/tmp/test").await;
+
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("429"), "error should mention 429: {err_msg}");
     }
 }
