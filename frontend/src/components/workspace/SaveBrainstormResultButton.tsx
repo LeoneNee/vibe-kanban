@@ -5,22 +5,20 @@ import { useTask } from '@/hooks/useTask';
 import { Button } from '@/components/ui/button';
 import { tasksApi } from '@/lib/api';
 import type { WorkspaceWithSession } from '@/types/attempt';
-import type { UnifiedLogEntry } from '@/types/logs';
+import type { PatchTypeWithKey } from '@/hooks/useConversationHistory/types';
 
 interface SaveBrainstormResultButtonProps {
   workspaceWithSession: WorkspaceWithSession | undefined;
 }
 
-function extractMarkdownContent(entries: UnifiedLogEntry[]): string | null {
+export function extractMarkdownContent(entries: PatchTypeWithKey[]): string | null {
   // 从后往前查找最后一条助手消息
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
-    if (
-      entry?.type === 'NORMALIZED_ENTRY' &&
-      entry?.data?.type === 'assistant_message'
-    ) {
-      const content = entry.data.content;
-      if (typeof content !== 'string') continue;
+    if (entry?.type === 'NORMALIZED_ENTRY') {
+      const normalized = entry.content;
+      if (normalized.entry_type.type !== 'assistant_message') continue;
+      const content = normalized.content;
 
       // 1. 查找 markdown 代码块
       const markdownMatch = content.match(/```markdown\s*([\s\S]*?)```/);
