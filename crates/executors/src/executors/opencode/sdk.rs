@@ -541,7 +541,14 @@ pub async fn create_session(
         // Try to close the oldest session and retry once
         if try_recover_from_session_limit(client, base_url, directory).await {
             tokio::time::sleep(Duration::from_millis(500)).await;
-            return create_session_inner(client, base_url, directory).await;
+            let retry_resp = client
+                .post(format!("{base_url}/session"))
+                .query(&[("directory", directory)])
+                .json(&serde_json::json!({}))
+                .send()
+                .await
+                .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;
+            return parse_session_response(retry_resp, "session.create").await;
         }
 
         return Err(ExecutorError::Io(io::Error::other(format!(
@@ -549,18 +556,7 @@ pub async fn create_session(
         ))));
     }
 
-    if !resp.status().is_success() {
-        return Err(ExecutorError::Io(io::Error::other(format!(
-            "OpenCode session.create failed: HTTP {}",
-            resp.status()
-        ))));
-    }
-
-    let session = resp
-        .json::<SessionResponse>()
-        .await
-        .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;
-    Ok(session.id)
+    parse_session_response(resp, "session.create").await
 }
 
 pub async fn fork_session(
@@ -584,7 +580,14 @@ pub async fn fork_session(
 
         if try_recover_from_session_limit(client, base_url, directory).await {
             tokio::time::sleep(Duration::from_millis(500)).await;
-            return fork_session_inner(client, base_url, directory, session_id).await;
+            let retry_resp = client
+                .post(format!("{base_url}/session/{session_id}/fork"))
+                .query(&[("directory", directory)])
+                .json(&serde_json::json!({}))
+                .send()
+                .await
+                .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;
+            return parse_session_response(retry_resp, "session.fork").await;
         }
 
         return Err(ExecutorError::Io(io::Error::other(format!(
@@ -592,18 +595,7 @@ pub async fn fork_session(
         ))));
     }
 
-    if !resp.status().is_success() {
-        return Err(ExecutorError::Io(io::Error::other(format!(
-            "OpenCode session.fork failed: HTTP {}",
-            resp.status()
-        ))));
-    }
-
-    let session = resp
-        .json::<SessionResponse>()
-        .await
-        .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;
-    Ok(session.id)
+    parse_session_response(resp, "session.fork").await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1001,6 +993,27 @@ pub async fn send_abort(
     .await;
 }
 
+/// Parse a session HTTP response into a session ID.
+/// Returns error for non-2xx responses with status and body details.
+async fn parse_session_response(
+    resp: reqwest::Response,
+    context: &str,
+) -> Result<String, ExecutorError> {
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(ExecutorError::Io(io::Error::other(format!(
+            "OpenCode {context} failed: HTTP {status} {body}"
+        ))));
+    }
+
+    let session = resp
+        .json::<SessionResponse>()
+        .await
+        .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;
+    Ok(session.id)
+}
+
 /// Close/delete a session on the OpenCode server.
 /// Best-effort: errors are logged at debug level but otherwise ignored.
 pub async fn close_session(
@@ -1079,65 +1092,6 @@ async fn try_recover_from_session_limit(
     } else {
         false
     }
-}
-
-/// Session creation without 429 recovery logic (used for retry after recovery).
-async fn create_session_inner(
-    client: &reqwest::Client,
-    base_url: &str,
-    directory: &str,
-) -> Result<String, ExecutorError> {
-    let resp = client
-        .post(format!("{base_url}/session"))
-        .query(&[("directory", directory)])
-        .json(&serde_json::json!({}))
-        .send()
-        .await
-        .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        return Err(ExecutorError::Io(io::Error::other(format!(
-            "OpenCode session.create failed: HTTP {status} {body}"
-        ))));
-    }
-
-    let session = resp
-        .json::<SessionResponse>()
-        .await
-        .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;
-    Ok(session.id)
-}
-
-/// Session fork without 429 recovery logic (used for retry after recovery).
-async fn fork_session_inner(
-    client: &reqwest::Client,
-    base_url: &str,
-    directory: &str,
-    session_id: &str,
-) -> Result<String, ExecutorError> {
-    let resp = client
-        .post(format!("{base_url}/session/{session_id}/fork"))
-        .query(&[("directory", directory)])
-        .json(&serde_json::json!({}))
-        .send()
-        .await
-        .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        return Err(ExecutorError::Io(io::Error::other(format!(
-            "OpenCode session.fork failed: HTTP {status} {body}"
-        ))));
-    }
-
-    let session = resp
-        .json::<SessionResponse>()
-        .await
-        .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;
-    Ok(session.id)
 }
 
 fn parse_model(model: &str) -> Option<ModelSpec> {
@@ -1855,5 +1809,53 @@ mod tests {
             try_recover_from_session_limit(&client, &mock_server.uri(), "/tmp/test").await;
 
         assert!(recovered);
+    }
+
+    #[tokio::test]
+    async fn test_parse_session_response_success() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/test"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"id": "parsed-id"})),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .get(format!("{}/test", mock_server.uri()))
+            .send()
+            .await
+            .unwrap();
+
+        let result = parse_session_response(resp, "test").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "parsed-id");
+    }
+
+    #[tokio::test]
+    async fn test_parse_session_response_error() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/test"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("internal error"))
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .get(format!("{}/test", mock_server.uri()))
+            .send()
+            .await
+            .unwrap();
+
+        let result = parse_session_response(resp, "test").await;
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("500"), "should contain status: {err_msg}");
     }
 }
