@@ -1081,7 +1081,10 @@ async fn try_recover_from_session_limit(
         }
     };
 
-    // Close the first session in the list (oldest)
+    // Close the first session in the list.
+    // NOTE: The opencode-ai API does not guarantee ordering of the session list.
+    // In practice, each executor spawns an isolated server process, so all sessions
+    // in this list belong to the current process and closing any one is acceptable.
     if let Some(oldest) = sessions.first() {
         tracing::info!(
             "Closing oldest session {} to free up session slot",
