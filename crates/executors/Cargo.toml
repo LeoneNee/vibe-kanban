@@ -57,6 +57,10 @@ lru = "0.12"
 [target.'cfg(windows)'.dependencies]
 winsplit = "0.1.0"
 
+[dev-dependencies]
+wiremock = "0.6"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
 [features]
 default = []
 qa-mode = []
