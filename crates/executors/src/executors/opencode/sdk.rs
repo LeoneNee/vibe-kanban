@@ -1705,4 +1705,72 @@ mod tests {
         let err_msg = format!("{}", result.unwrap_err());
         assert!(err_msg.contains("429"), "error should mention 429: {err_msg}");
     }
+
+    #[tokio::test]
+    async fn test_fork_session_success() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/session/parent-sess/fork"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"id": "forked-sess-456"})),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let result =
+            fork_session(&client, &mock_server.uri(), "/tmp/test", "parent-sess").await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "forked-sess-456");
+    }
+
+    #[tokio::test]
+    async fn test_fork_session_429_recovery() {
+        let mock_server = MockServer::start().await;
+
+        // First fork: 429
+        Mock::given(method("POST"))
+            .and(path("/session/parent-sess/fork"))
+            .respond_with(ResponseTemplate::new(429).set_body_string("session limit"))
+            .up_to_n_times(1)
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        // list + close
+        Mock::given(method("GET"))
+            .and(path("/session"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!([{"id": "old-sess"}])),
+            )
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("DELETE"))
+            .and(path("/session/old-sess"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock_server)
+            .await;
+
+        // Retry fork: success
+        Mock::given(method("POST"))
+            .and(path("/session/parent-sess/fork"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"id": "forked-new"})),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let result =
+            fork_session(&client, &mock_server.uri(), "/tmp/test", "parent-sess").await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "forked-new");
+    }
 }
