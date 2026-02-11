@@ -1773,4 +1773,87 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "forked-new");
     }
+
+    #[tokio::test]
+    async fn test_close_session_success() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("DELETE"))
+            .and(path("/session/sess-to-close"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        // close_session is best-effort, returns ()
+        close_session(&client, &mock_server.uri(), "/tmp/test", "sess-to-close").await;
+
+        // If we get here without panic, the mock expectation is verified on drop
+    }
+
+    #[tokio::test]
+    async fn test_close_session_server_error_is_silent() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("DELETE"))
+            .and(path("/session/sess-err"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        // Should not panic or return error
+        close_session(&client, &mock_server.uri(), "/tmp/test", "sess-err").await;
+    }
+
+    #[tokio::test]
+    async fn test_try_recover_empty_sessions_returns_false() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/session"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!([])),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let recovered =
+            try_recover_from_session_limit(&client, &mock_server.uri(), "/tmp/test").await;
+
+        assert!(!recovered);
+    }
+
+    #[tokio::test]
+    async fn test_try_recover_closes_first_session() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/session"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!([
+                        {"id": "first-sess"},
+                        {"id": "second-sess"}
+                    ])),
+            )
+            .mount(&mock_server)
+            .await;
+
+        // Expect DELETE on the first session only
+        Mock::given(method("DELETE"))
+            .and(path("/session/first-sess"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let recovered =
+            try_recover_from_session_limit(&client, &mock_server.uri(), "/tmp/test").await;
+
+        assert!(recovered);
+    }
 }
