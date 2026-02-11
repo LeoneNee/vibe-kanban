@@ -33,5 +33,6 @@ export function buildStoryTask(
     parent_workspace_id: null,
     parent_task_id: null,
     image_ids: null,
+    tag: undefined,
   };
 }

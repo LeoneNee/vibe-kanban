@@ -18,7 +18,7 @@ vi.mock('@/components/ConfigProvider', () => ({
 }));
 
 vi.mock('@/hooks/useTaskWorkflow', () => ({
-  useTaskWorkflow: (task: Task | null) => {
+  useTaskWorkflow: (task: TaskWithAttemptStatus | null) => {
     if (!task?.description && task?.parent_task_id) {
       return {
         progress: 25,
@@ -77,6 +77,7 @@ describe('TaskPanel - Auto-Brainstorm Navigation', () => {
       has_in_progress_attempt: false,
       last_attempt_failed: false,
       executor: '',
+      tag: null,
     };
 
     renderTaskPanel(newTask);
@@ -107,6 +108,7 @@ describe('TaskPanel - Auto-Brainstorm Navigation', () => {
       has_in_progress_attempt: false,
       last_attempt_failed: false,
       executor: '',
+      tag: null,
     };
 
     renderTaskPanel(newTask);

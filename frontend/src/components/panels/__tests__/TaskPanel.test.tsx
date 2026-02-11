@@ -85,6 +85,7 @@ describe('TaskPanel - Story Context Navigation', () => {
       has_in_progress_attempt: false,
       last_attempt_failed: false,
       executor: '',
+      tag: null,
     };
 
     renderTaskPanel(taskWithStory);
@@ -121,6 +122,7 @@ describe('TaskPanel - Story Context Navigation', () => {
       has_in_progress_attempt: false,
       last_attempt_failed: false,
       executor: '',
+      tag: null,
     };
 
     renderTaskPanel(taskWithoutStory);

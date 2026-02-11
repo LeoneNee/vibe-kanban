@@ -47,11 +47,13 @@ import { useHotkeysContext } from 'react-hotkeys-hook';
 import { cn } from '@/lib/utils';
 import type {
   TaskStatus,
+  TaskTag,
   ExecutorProfileId,
   ImageResponse,
   CreateTask,
   TaskType,
 } from 'shared/types';
+import { ALL_TASK_TAGS, TASK_TAG_CONFIGS } from '@/config/taskTags';
 
 interface Task {
   id: string;
@@ -59,6 +61,7 @@ interface Task {
   title: string;
   description: string | null;
   status: TaskStatus;
+  tag?: TaskTag | null;
   created_at: string;
   updated_at: string;
 }
@@ -80,6 +83,7 @@ type TaskFormValues = {
   title: string;
   description: string;
   status: TaskStatus;
+  tag: TaskTag | null;
   executorProfileId: ExecutorProfileId | null;
   repoBranches: RepoBranch[];
   autoStart: boolean;
@@ -136,6 +140,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
           title: props.task.title,
           description: props.task.description || '',
           status: props.task.status,
+          tag: props.task.tag ?? null,
           executorProfileId: baseProfile,
           repoBranches: defaultRepoBranches,
           autoStart: false,
@@ -146,6 +151,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
           title: props.initialTask.title,
           description: props.initialTask.description || '',
           status: 'todo',
+          tag: null,
           executorProfileId: baseProfile,
           repoBranches: defaultRepoBranches,
           autoStart: true,
@@ -158,6 +164,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
           title: '',
           description: '',
           status: 'todo',
+          tag: null,
           executorProfileId: baseProfile,
           repoBranches: defaultRepoBranches,
           autoStart: !isStoryCreate,
@@ -181,6 +188,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
             title: value.title,
             description: value.description,
             status: value.status,
+            tag: value.tag ?? undefined,
             parent_workspace_id: null,
             parent_task_id: null,
             image_ids: images.length > 0 ? images.map((img) => img.id) : null,
@@ -200,6 +208,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
         parent_workspace_id: mode === 'subtask' ? props.parentTaskAttemptId : null,
         parent_task_id: mode === 'create' && props.parentTaskId ? props.parentTaskId : null,
         image_ids: imageIds,
+        tag: value.tag ?? undefined,
       };
       const shouldAutoStart =
         !isStoryCreate && value.autoStart && !forceCreateOnlyRef.current;
@@ -467,6 +476,44 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
               </div>
             )}
           </form.Field>
+          {/* Tag selector — only for Task type (not Story) */}
+          {!isStoryCreate && (
+            <form.Field name="tag">
+              {(field) => (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {ALL_TASK_TAGS.map((tagKey) => {
+                    const config = TASK_TAG_CONFIGS[tagKey];
+                    const isSelected = field.state.value === tagKey;
+                    return (
+                      <button
+                        key={tagKey}
+                        type="button"
+                        onClick={() =>
+                          field.handleChange(isSelected ? null : tagKey)
+                        }
+                        className={cn(
+                          'px-2 py-0.5 rounded text-xs border transition-colors',
+                          isSelected
+                            ? `${config.bgColor} border-current font-medium`
+                            : 'border-border text-muted-foreground hover:border-foreground/30'
+                        )}
+                        title={config.label}
+                      >
+                        <span
+                          className={cn(
+                            'inline-block w-2 h-2 rounded-full mr-1',
+                            config.dotColor
+                          )}
+                        />
+                        {config.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </form.Field>
+          )}
+
           {/* Edit mode status */}
           {editMode && (
             <form.Field name="status">

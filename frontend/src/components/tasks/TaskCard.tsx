@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { KanbanCard } from '@/components/ui/shadcn-io/kanban';
 import { Link, Loader2, XCircle } from 'lucide-react';
-import type { TaskWithAttemptStatus } from 'shared/types';
+import type { TaskWithAttemptStatus, TaskTag } from 'shared/types';
 import { ActionsDropdown } from '@/components/ui/actions-dropdown';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useNavigateWithSearch } from '@/hooks';
 import { paths } from '@/lib/paths';
 import { attemptsApi } from '@/lib/api';
+import { TASK_TAG_CONFIGS } from '@/config/taskTags';
 import { TaskCardHeader } from './TaskCardHeader';
 import { useTranslation } from 'react-i18next';
 
@@ -74,7 +81,11 @@ export function TaskCard({
     });
   }, [isOpen]);
 
-  return (
+  const tagConfig = task.tag
+    ? TASK_TAG_CONFIGS[task.tag as TaskTag]
+    : null;
+
+  const card = (
     <KanbanCard
       key={task.id}
       id={task.id}
@@ -84,6 +95,7 @@ export function TaskCard({
       onClick={handleClick}
       isOpen={isOpen}
       forwardedRef={localRef}
+      className={tagConfig ? `border-l-4 ${tagConfig.color}` : undefined}
     >
       <div className="flex flex-col gap-2">
         <TaskCardHeader
@@ -122,4 +134,17 @@ export function TaskCard({
       </div>
     </KanbanCard>
   );
+
+  if (tagConfig) {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>{card}</TooltipTrigger>
+          <TooltipContent side="top">{tagConfig.label}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  return card;
 }

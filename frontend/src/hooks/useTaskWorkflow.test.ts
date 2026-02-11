@@ -19,6 +19,7 @@ describe('useTaskWorkflow', () => {
     has_in_progress_attempt: false,
     last_attempt_failed: false,
     executor: 'claude_code',
+    tag: null,
   });
 
   it('should return "brainstorm" action for new tasks', () => {

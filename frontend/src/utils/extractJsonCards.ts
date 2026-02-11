@@ -3,6 +3,7 @@ import type { PatchTypeWithKey } from '@/hooks/useConversationHistory/types';
 export type BrainstormTask = {
   title: string;
   description?: string;
+  tag?: string;
 };
 
 export type BrainstormCard = {

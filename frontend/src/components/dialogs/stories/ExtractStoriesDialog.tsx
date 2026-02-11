@@ -8,7 +8,7 @@ import { defineModal } from '@/lib/modals';
 import { tasksApi } from '@/lib/api';
 import { paths } from '@/lib/paths';
 import { buildStoryTask } from '@/utils/buildStoryTask';
-import type { Task } from 'shared/types';
+import type { Task, TaskTag } from 'shared/types';
 import type { BrainstormCard, BrainstormTask } from '@/utils/extractJsonCards';
 import {
   Dialog,
@@ -123,6 +123,7 @@ const ExtractStoriesDialogImpl = NiceModal.create<ExtractStoriesDialogProps>(
               parent_workspace_id: null,
               parent_task_id: story.id,
               image_ids: null,
+              tag: (task.tag as TaskTag) || undefined,
             }));
 
             const childResults = await Promise.allSettled(

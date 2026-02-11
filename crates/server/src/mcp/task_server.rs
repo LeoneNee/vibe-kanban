@@ -34,6 +34,8 @@ pub struct CreateTaskRequest {
     pub title: String,
     #[schemars(description = "Optional description of the task")]
     pub description: Option<String>,
+    #[schemars(description = "Optional tag for task categorization: 'ui-design', 'api', 'bugfix', 'refactor', 'infra', 'docs', 'test'")]
+    pub tag: Option<String>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -167,6 +169,8 @@ pub struct TaskSummary {
     pub title: String,
     #[schemars(description = "Current status of the task")]
     pub status: String,
+    #[schemars(description = "Optional tag for categorization")]
+    pub tag: Option<String>,
     #[schemars(description = "When the task was created")]
     pub created_at: String,
     #[schemars(description = "When the task was last updated")]
@@ -183,6 +187,7 @@ impl TaskSummary {
             id: task.id.to_string(),
             title: task.title.to_string(),
             status: task.status.to_string(),
+            tag: task.tag.map(|t| t.to_string()),
             created_at: task.created_at.to_rfc3339(),
             updated_at: task.updated_at.to_rfc3339(),
             has_in_progress_attempt: Some(task.has_in_progress_attempt),
@@ -201,6 +206,8 @@ pub struct TaskDetails {
     pub description: Option<String>,
     #[schemars(description = "Current status of the task")]
     pub status: String,
+    #[schemars(description = "Optional tag for categorization")]
+    pub tag: Option<String>,
     #[schemars(description = "When the task was created")]
     pub created_at: String,
     #[schemars(description = "When the task was last updated")]
@@ -218,6 +225,7 @@ impl TaskDetails {
             title: task.title,
             description: task.description,
             status: task.status.to_string(),
+            tag: task.tag.map(|t| t.to_string()),
             created_at: task.created_at.to_rfc3339(),
             updated_at: task.updated_at.to_rfc3339(),
             has_in_progress_attempt: None,
@@ -587,8 +595,11 @@ impl TaskServer {
             project_id,
             title,
             description,
+            tag,
         }): Parameters<CreateTaskRequest>,
     ) -> Result<CallToolResult, ErrorData> {
+        use db::models::task::TaskTag;
+
         // Expand @tagname references in description
         let expanded_description = match description {
             Some(desc) => Some(self.expand_tags(&desc).await),
@@ -597,15 +608,20 @@ impl TaskServer {
 
         let url = self.url("/api/tasks");
 
+        let mut create_task = CreateTask::from_title_description(
+            project_id,
+            title,
+            expanded_description,
+        );
+        if let Some(tag_str) = tag {
+            create_task.tag = TaskTag::from_str(&tag_str).ok();
+        }
+
         let task: Task = match self
             .send_json(
                 self.client
                     .post(&url)
-                    .json(&CreateTask::from_title_description(
-                        project_id,
-                        title,
-                        expanded_description,
-                    )),
+                    .json(&create_task),
             )
             .await
         {
@@ -954,6 +970,7 @@ impl TaskServer {
             parent_task_id: None,
             image_ids: None,
             workflow_state: None,
+            tag: None,
         };
         let url = self.url(&format!("/api/tasks/{}", task_id));
         let updated_task: Task = match self.send_json(self.client.put(&url).json(&payload)).await {

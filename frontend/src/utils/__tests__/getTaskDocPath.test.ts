@@ -33,6 +33,7 @@ describe('getTaskDocPath', () => {
     workflow_state: 'new',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    tag: null,
   });
 
   it('returns correct path for Story', () => {

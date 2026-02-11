@@ -418,6 +418,7 @@ pub async fn update_task(
         .or(existing_task.parent_workspace_id);
     let parent_task_id = payload.parent_task_id.or(existing_task.parent_task_id);
     let workflow_state = payload.workflow_state;
+    let tag = payload.tag;
 
     let task = Task::update(
         &deployment.db().pool,
@@ -429,6 +430,7 @@ pub async fn update_task(
         parent_workspace_id,
         parent_task_id,
         workflow_state,
+        tag,
     )
     .await?;
 

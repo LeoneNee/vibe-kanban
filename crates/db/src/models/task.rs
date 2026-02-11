@@ -41,6 +41,23 @@ pub enum WorkflowState {
 }
 
 #[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Type, Serialize, Deserialize, TS, Display, EnumString,
+)]
+#[sqlx(type_name = "TEXT", rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
+#[ts(export)]
+pub enum TaskTag {
+    UiDesign,
+    Api,
+    Bugfix,
+    Refactor,
+    Infra,
+    Docs,
+    Test,
+}
+
+#[derive(
     Debug, Clone, Type, Serialize, Deserialize, PartialEq, TS, EnumString, Display, Default,
 )]
 #[sqlx(type_name = "task_status", rename_all = "lowercase")]
@@ -66,6 +83,7 @@ pub struct Task {
     pub parent_workspace_id: Option<Uuid>, // Foreign key to parent Workspace
     pub parent_task_id: Option<Uuid>,
     pub workflow_state: WorkflowState,
+    pub tag: Option<TaskTag>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -112,6 +130,8 @@ pub struct CreateTask {
     pub image_ids: Option<Vec<Uuid>>,
     #[ts(optional)]
     pub workflow_state: Option<WorkflowState>,
+    #[ts(optional)]
+    pub tag: Option<TaskTag>,
 }
 
 impl CreateTask {
@@ -130,6 +150,7 @@ impl CreateTask {
             parent_task_id: None,
             image_ids: None,
             workflow_state: None,
+            tag: None,
         }
     }
 }
@@ -144,6 +165,8 @@ pub struct UpdateTask {
     pub image_ids: Option<Vec<Uuid>>,
     #[ts(optional)]
     pub workflow_state: Option<WorkflowState>,
+    #[ts(optional)]
+    pub tag: Option<TaskTag>,
 }
 
 impl Task {
@@ -174,6 +197,7 @@ impl Task {
   t.parent_workspace_id           AS "parent_workspace_id: Uuid",
   t.parent_task_id                AS "parent_task_id: Uuid",
   t.workflow_state                AS "workflow_state!: WorkflowState",
+  t.tag                           AS "tag: TaskTag",
   t.created_at                    AS "created_at!: DateTime<Utc>",
   t.updated_at                    AS "updated_at!: DateTime<Utc>",
 
@@ -229,6 +253,7 @@ ORDER BY t.created_at DESC"#,
                     parent_workspace_id: rec.parent_workspace_id,
                     parent_task_id: rec.parent_task_id,
                     workflow_state: rec.workflow_state,
+                    tag: rec.tag,
                     created_at: rec.created_at,
                     updated_at: rec.updated_at,
                 },
@@ -250,7 +275,7 @@ ORDER BY t.created_at DESC"#,
         use sqlx::QueryBuilder;
 
         let mut builder: QueryBuilder<Sqlite> = QueryBuilder::new(
-            "SELECT id, project_id, title, description, status, task_type, parent_workspace_id, parent_task_id, workflow_state, created_at, updated_at FROM tasks WHERE project_id = "
+            "SELECT id, project_id, title, description, status, task_type, parent_workspace_id, parent_task_id, workflow_state, tag, created_at, updated_at FROM tasks WHERE project_id = "
         );
         builder.push_bind(project_id);
 
@@ -282,7 +307,7 @@ ORDER BY t.created_at DESC"#,
     pub async fn find_by_id(pool: &SqlitePool, id: Uuid) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
                WHERE id = $1"#,
             id
@@ -294,7 +319,7 @@ ORDER BY t.created_at DESC"#,
     pub async fn find_by_rowid(pool: &SqlitePool, rowid: i64) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
                WHERE rowid = $1"#,
             rowid
@@ -312,9 +337,9 @@ ORDER BY t.created_at DESC"#,
         let workflow_state = data.workflow_state.unwrap_or_default();
         sqlx::query_as!(
             Task,
-            r#"INSERT INTO tasks (id, project_id, title, description, status, task_type, parent_workspace_id, parent_task_id, workflow_state)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
+            r#"INSERT INTO tasks (id, project_id, title, description, status, task_type, parent_workspace_id, parent_task_id, workflow_state, tag)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
             task_id,
             data.project_id,
             data.title,
@@ -323,7 +348,8 @@ ORDER BY t.created_at DESC"#,
             data.task_type,
             data.parent_workspace_id,
             data.parent_task_id,
-            workflow_state
+            workflow_state,
+            data.tag
         )
         .fetch_one(pool)
         .await
@@ -339,13 +365,14 @@ ORDER BY t.created_at DESC"#,
         parent_workspace_id: Option<Uuid>,
         parent_task_id: Option<Uuid>,
         workflow_state: Option<WorkflowState>,
+        tag: Option<TaskTag>,
     ) -> Result<Self, sqlx::Error> {
         sqlx::query_as!(
             Task,
             r#"UPDATE tasks
-               SET title = $3, description = $4, status = $5, parent_workspace_id = $6, parent_task_id = $7, workflow_state = COALESCE($8, workflow_state), updated_at = datetime('now', 'subsec')
+               SET title = $3, description = $4, status = $5, parent_workspace_id = $6, parent_task_id = $7, workflow_state = COALESCE($8, workflow_state), tag = COALESCE($9, tag), updated_at = datetime('now', 'subsec')
                WHERE id = $1 AND project_id = $2
-               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
+               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
             id,
             project_id,
             title,
@@ -353,7 +380,8 @@ ORDER BY t.created_at DESC"#,
             status,
             parent_workspace_id,
             parent_task_id,
-            workflow_state
+            workflow_state,
+            tag
         )
         .fetch_one(pool)
         .await
@@ -385,7 +413,7 @@ ORDER BY t.created_at DESC"#,
             r#"UPDATE tasks
                SET workflow_state = $2, updated_at = datetime('now', 'subsec')
                WHERE id = $1
-               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
+               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
             id,
             workflow_state
         )
@@ -433,7 +461,7 @@ ORDER BY t.created_at DESC"#,
         parent_task_id: Uuid,
     ) -> Result<Vec<Self>, sqlx::Error> {
         sqlx::query_as::<_, Task>(
-            r#"SELECT id, project_id, title, description, status, task_type, parent_workspace_id, parent_task_id, workflow_state, created_at, updated_at
+            r#"SELECT id, project_id, title, description, status, task_type, parent_workspace_id, parent_task_id, workflow_state, tag, created_at, updated_at
                FROM tasks
                WHERE parent_task_id = $1
                ORDER BY created_at DESC"#,
@@ -475,7 +503,7 @@ ORDER BY t.created_at DESC"#,
         // Find only child tasks that have this workspace as their parent
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
                WHERE parent_workspace_id = $1
                ORDER BY created_at DESC"#,
@@ -567,5 +595,40 @@ mod tests {
         // 测试默认值是 New
         let state = WorkflowState::default();
         assert_eq!(state, WorkflowState::New);
+    }
+
+    #[test]
+    fn test_task_tag_serialization() {
+        let tag = TaskTag::UiDesign;
+        let json = serde_json::to_string(&tag).unwrap();
+        assert_eq!(json, "\"ui-design\"");
+
+        let tag = TaskTag::Api;
+        let json = serde_json::to_string(&tag).unwrap();
+        assert_eq!(json, "\"api\"");
+
+        let tag = TaskTag::Bugfix;
+        let json = serde_json::to_string(&tag).unwrap();
+        assert_eq!(json, "\"bugfix\"");
+    }
+
+    #[test]
+    fn test_task_tag_deserialization() {
+        let tag: TaskTag = serde_json::from_str("\"ui-design\"").unwrap();
+        assert_eq!(tag, TaskTag::UiDesign);
+
+        let tag: TaskTag = serde_json::from_str("\"refactor\"").unwrap();
+        assert_eq!(tag, TaskTag::Refactor);
+    }
+
+    #[test]
+    fn test_task_tag_option_serialization() {
+        let tag: Option<TaskTag> = None;
+        let json = serde_json::to_string(&tag).unwrap();
+        assert_eq!(json, "null");
+
+        let tag: Option<TaskTag> = Some(TaskTag::Test);
+        let json = serde_json::to_string(&tag).unwrap();
+        assert_eq!(json, "\"test\"");
     }
 }
