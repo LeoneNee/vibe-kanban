@@ -479,102 +479,116 @@ pub async fn execute(
         },
     };
 
-    log_writer
-        .log_event(&OpencodeExecutorEvent::SessionStart {
-            session_id: session_id.clone(),
-        })
-        .await?;
-
-    let is_compact = matches!(&command, OpencodeSlashCommand::Compact);
-    let compaction_model = if is_compact {
-        Some(
-            sdk::resolve_compaction_model(
-                &client,
-                &config.base_url,
-                &config.directory,
-                config.model.as_deref(),
-            )
-            .await?,
-        )
-    } else {
-        None
-    };
-
-    let (control_tx, mut control_rx) = mpsc::unbounded_channel::<ControlEvent>();
-    let event_resp = tokio::select! {
-        _ = cancel.cancelled() => return Ok(()),
-        res = sdk::connect_event_stream(&client, &config.base_url, &config.directory, None) => res?,
-    };
-    let event_handle = tokio::spawn(sdk::spawn_event_listener(
-        EventListenerConfig {
-            client: client.clone(),
-            base_url: config.base_url.clone(),
-            directory: config.directory.clone(),
-            session_id: session_id.clone(),
-            log_writer: log_writer.clone(),
-            approvals: config.approvals.clone(),
-            auto_approve: config.auto_approve,
-            control_tx,
-            models_cache_key: config.models_cache_key.clone(),
-        },
-        event_resp,
-    ));
-
-    let request_client = client.clone();
-    let request_base_url = config.base_url.clone();
-    let request_directory = config.directory.clone();
-    let request_session_id = session_id.clone();
-    let request_agent = config.agent.clone();
-    let request_model = config.model.clone();
-    let request_model_variant = config.model_variant.clone();
-
-    let request_fut: Pin<Box<dyn Future<Output = Result<(), ExecutorError>> + Send>> = match command
-    {
-        OpencodeSlashCommand::Compact => {
-            let model = compaction_model.ok_or_else(|| {
-                ExecutorError::Io(io::Error::other("OpenCode compaction model missing"))
-            })?;
-            Box::pin(async move {
-                sdk::session_summarize(
-                    &request_client,
-                    &request_base_url,
-                    &request_directory,
-                    &request_session_id,
-                    model,
-                )
-                .await
+    // Wrap all post-creation work in an async block to guarantee session cleanup.
+    // `return` inside the block exits the block (not the outer function), ensuring
+    // close_session always runs regardless of success, error, or cancellation.
+    let result: Result<(), ExecutorError> = async {
+        log_writer
+            .log_event(&OpencodeExecutorEvent::SessionStart {
+                session_id: session_id.clone(),
             })
-        }
-        OpencodeSlashCommand::Custom { name, arguments } => Box::pin(async move {
-            sdk::session_command(
-                &request_client,
-                &request_base_url,
-                &request_directory,
-                &request_session_id,
-                name,
-                arguments,
-                request_agent,
-                request_model,
-                request_model_variant,
+            .await?;
+
+        let is_compact = matches!(&command, OpencodeSlashCommand::Compact);
+        let compaction_model = if is_compact {
+            Some(
+                sdk::resolve_compaction_model(
+                    &client,
+                    &config.base_url,
+                    &config.directory,
+                    config.model.as_deref(),
+                )
+                .await?,
             )
-            .await
-        }),
-        _ => unreachable!("handled non-session commands earlier"),
-    };
+        } else {
+            None
+        };
 
-    let request_result =
-        sdk::run_request_with_control(request_fut, &mut control_rx, cancel.clone()).await;
+        let (control_tx, mut control_rx) = mpsc::unbounded_channel::<ControlEvent>();
+        let event_resp = tokio::select! {
+            _ = cancel.cancelled() => return Ok(()),
+            res = sdk::connect_event_stream(&client, &config.base_url, &config.directory, None) => res?,
+        };
+        let event_handle = tokio::spawn(sdk::spawn_event_listener(
+            EventListenerConfig {
+                client: client.clone(),
+                base_url: config.base_url.clone(),
+                directory: config.directory.clone(),
+                session_id: session_id.clone(),
+                log_writer: log_writer.clone(),
+                approvals: config.approvals.clone(),
+                auto_approve: config.auto_approve,
+                control_tx,
+                models_cache_key: config.models_cache_key.clone(),
+            },
+            event_resp,
+        ));
 
-    if cancel.is_cancelled() {
-        sdk::send_abort(&client, &config.base_url, &config.directory, &session_id).await;
+        let request_client = client.clone();
+        let request_base_url = config.base_url.clone();
+        let request_directory = config.directory.clone();
+        let request_session_id = session_id.clone();
+        let request_agent = config.agent.clone();
+        let request_model = config.model.clone();
+        let request_model_variant = config.model_variant.clone();
+
+        let request_fut: Pin<Box<dyn Future<Output = Result<(), ExecutorError>> + Send>> =
+            match command {
+                OpencodeSlashCommand::Compact => {
+                    let model = compaction_model.ok_or_else(|| {
+                        ExecutorError::Io(io::Error::other("OpenCode compaction model missing"))
+                    })?;
+                    Box::pin(async move {
+                        sdk::session_summarize(
+                            &request_client,
+                            &request_base_url,
+                            &request_directory,
+                            &request_session_id,
+                            model,
+                        )
+                        .await
+                    })
+                }
+                OpencodeSlashCommand::Custom { name, arguments } => Box::pin(async move {
+                    sdk::session_command(
+                        &request_client,
+                        &request_base_url,
+                        &request_directory,
+                        &request_session_id,
+                        name,
+                        arguments,
+                        request_agent,
+                        request_model,
+                        request_model_variant,
+                    )
+                    .await
+                }),
+                _ => unreachable!("handled non-session commands earlier"),
+            };
+
+        let request_result =
+            sdk::run_request_with_control(request_fut, &mut control_rx, cancel.clone()).await;
+
+        if cancel.is_cancelled() {
+            sdk::send_abort(&client, &config.base_url, &config.directory, &session_id).await;
+            event_handle.abort();
+            return Ok(());
+        }
+
         event_handle.abort();
-        return Ok(());
+
+        request_result?;
+        log_writer.log_event(&OpencodeExecutorEvent::Done).await?;
+
+        Ok(())
     }
+    .await;
 
-    event_handle.abort();
+    // Always close the session for proper resource cleanup (best-effort).
+    // Spawned as background task to avoid blocking the caller with the 5s timeout.
+    tokio::spawn(async move {
+        sdk::close_session(&client, &config.base_url, &config.directory, &session_id).await;
+    });
 
-    request_result?;
-    log_writer.log_event(&OpencodeExecutorEvent::Done).await?;
-
-    Ok(())
+    result
 }

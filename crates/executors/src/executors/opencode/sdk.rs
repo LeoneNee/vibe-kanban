@@ -387,9 +387,11 @@ async fn run_session_inner(
     }
     .await;
 
-    // Always close the session for proper resource cleanup (best-effort),
-    // regardless of whether the above work succeeded, failed, or was cancelled.
-    close_session(&client, &config.base_url, &config.directory, &session_id).await;
+    // Always close the session for proper resource cleanup (best-effort).
+    // Spawned as background task to avoid blocking the caller with the 5s timeout.
+    tokio::spawn(async move {
+        close_session(&client, &config.base_url, &config.directory, &session_id).await;
+    });
 
     result
 }
@@ -1860,5 +1862,37 @@ mod tests {
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(err_msg.contains("500"), "should contain status: {err_msg}");
+    }
+
+    #[tokio::test]
+    async fn test_close_session_timeout_does_not_block_caller() {
+        let mock_server = MockServer::start().await;
+
+        // Server takes 10 seconds to respond (simulating slow close)
+        Mock::given(method("DELETE"))
+            .and(path("/session/slow-sess"))
+            .respond_with(
+                ResponseTemplate::new(200).set_delay(std::time::Duration::from_secs(10)),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let start = std::time::Instant::now();
+
+        // Spawn cleanup in background (same pattern we'll use in production)
+        let bg_client = client.clone();
+        let bg_url = mock_server.uri();
+        tokio::spawn(async move {
+            close_session(&bg_client, &bg_url, "/tmp/test", "slow-sess").await;
+        });
+
+        // Caller should return immediately (well under 1s)
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "close_session spawn should not block caller: took {:?}",
+            elapsed
+        );
     }
 }
