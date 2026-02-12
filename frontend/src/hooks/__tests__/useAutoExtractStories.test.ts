@@ -251,4 +251,76 @@ describe('useAutoExtractStories', () => {
     expect(mockGitCommit).toHaveBeenCalled();
     expect(result.current.error).toBeNull();
   });
+
+  it('should still reach done even if doc write fails', async () => {
+    const { useAutoExtractStories } = await import('../useAutoExtractStories');
+    const cards = [makeCard('Story 1')];
+    mockWriteDoc.mockRejectedValue(new Error('Doc write failed'));
+
+    const { result } = renderHook(
+      () => useAutoExtractStories(cards, 'proj-1', true),
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('done');
+    });
+
+    expect(mockWriteDoc).toHaveBeenCalled();
+    expect(result.current.error).toBeNull();
+  });
+
+  it('should handle multiple stories with tasks correctly', async () => {
+    const { useAutoExtractStories } = await import('../useAutoExtractStories');
+    const cards = [makeCard('Story 1', 2), makeCard('Story 2', 1)];
+
+    let callCount = 0;
+    mockCreate.mockImplementation(() => {
+      callCount++;
+      return Promise.resolve({
+        id: `item-${callCount}`,
+        title: `Item ${callCount}`,
+      });
+    });
+
+    const { result } = renderHook(
+      () => useAutoExtractStories(cards, 'proj-1', true),
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('done');
+    });
+
+    // 2 stories + 2 child tasks for Story 1 + 1 child task for Story 2 = 5
+    expect(mockCreate).toHaveBeenCalledTimes(5);
+    expect(result.current.storiesCreated).toBe(2);
+    expect(result.current.tasksCreated).toBe(3);
+    expect(mockWriteDoc).toHaveBeenCalledTimes(2);
+    expect(mockGitCommit).toHaveBeenCalledWith(
+      'proj-1',
+      expect.stringContaining('docs: add 2 stories from brainstorm')
+    );
+  });
+
+  it('should skip doc write when doc_content is empty or whitespace', async () => {
+    const { useAutoExtractStories } = await import('../useAutoExtractStories');
+    const card: BrainstormCard = {
+      title: 'Story No Doc',
+      description: 'A story without doc content',
+      doc_content: '   ',
+      tasks: [{ title: 'Task 1' }],
+    };
+
+    const { result } = renderHook(
+      () => useAutoExtractStories([card], 'proj-1', true),
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('done');
+    });
+
+    expect(mockWriteDoc).not.toHaveBeenCalled();
+  });
 });
