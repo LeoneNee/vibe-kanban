@@ -19,7 +19,7 @@ use db::models::{
 };
 use deployment::Deployment;
 use futures_util::{SinkExt, StreamExt, TryStreamExt};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use services::services::{
     file_search::SearchQuery, project::ProjectServiceError,
     remote_client::CreateRemoteProjectPayload,
@@ -568,6 +568,49 @@ pub async fn get_project_repository(
     }
 }
 
+#[derive(Deserialize)]
+pub struct GitCommitRequest {
+    pub message: String,
+}
+
+#[derive(Serialize)]
+pub struct GitCommitResponse {
+    pub committed: bool,
+}
+
+pub async fn git_commit_project(
+    Extension(project): Extension<Project>,
+    State(deployment): State<DeploymentImpl>,
+    Json(payload): Json<GitCommitRequest>,
+) -> Result<ResponseJson<ApiResponse<GitCommitResponse>>, ApiError> {
+    let message = payload.message.trim().to_string();
+    if message.is_empty() {
+        return Err(ApiError::BadRequest(
+            "Commit message must not be empty".to_string(),
+        ));
+    }
+
+    let repositories = deployment
+        .project()
+        .get_repositories(&deployment.db().pool, project.id)
+        .await?;
+
+    let repo_path = repositories
+        .first()
+        .map(|r| r.path.clone())
+        .ok_or_else(|| ApiError::BadRequest("Project has no repositories".to_string()))?;
+
+    let git = deployment.git().clone();
+
+    let committed = tokio::task::spawn_blocking(move || git.commit(&repo_path, &message))
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Task join error: {e}")))??;
+
+    Ok(ResponseJson(ApiResponse::success(GitCommitResponse {
+        committed,
+    })))
+}
+
 pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
     let project_id_router = Router::new()
         .route(
@@ -577,6 +620,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .route("/remote/members", get(get_project_remote_members))
         .route("/search", get(search_project_files))
         .route("/open-editor", post(open_project_in_editor))
+        .route("/git-commit", post(git_commit_project))
         .route(
             "/link",
             post(link_project_to_existing_remote).delete(unlink_project),
