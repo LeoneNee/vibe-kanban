@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { KanbanCard } from '@/components/ui/shadcn-io/kanban';
+import { FileText } from 'lucide-react';
 import type { Task, TaskWithAttemptStatus } from 'shared/types';
 import { ActionsDropdown } from '@/components/ui/actions-dropdown';
+import { Button } from '@/components/ui/button';
 import { TaskCardHeader } from '../tasks/TaskCardHeader';
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +14,7 @@ interface StoryCardProps {
   index: number;
   status: string;
   onViewDetails: (task: Task) => void;
+  onViewDoc?: (task: Task) => void;
   isOpen?: boolean;
   projectId: string;
 }
@@ -21,6 +24,7 @@ export function StoryCard({
   index,
   status,
   onViewDetails,
+  onViewDoc,
   isOpen,
   projectId,
 }: StoryCardProps) {
@@ -78,6 +82,20 @@ export function StoryCard({
                 <Badge variant="secondary">
                   {childCount} {childCount === 1 ? 'task' : 'tasks'}
                 </Badge>
+              )}
+              {onViewDoc && (
+                <Button
+                  variant="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onViewDoc(task);
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  title="View document"
+                >
+                  <FileText className="h-4 w-4" />
+                </Button>
               )}
               <ActionsDropdown
                 task={task as unknown as TaskWithAttemptStatus}

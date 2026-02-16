@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { KanbanCard } from '@/components/ui/shadcn-io/kanban';
-import { Link, Loader2, XCircle } from 'lucide-react';
+import { FileText, Link, Loader2, XCircle } from 'lucide-react';
 import type { TaskWithAttemptStatus, TaskTag } from 'shared/types';
 import { ActionsDropdown } from '@/components/ui/actions-dropdown';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,7 @@ interface TaskCardProps {
   index: number;
   status: string;
   onViewDetails: (task: Task) => void;
+  onViewDoc?: (task: Task) => void;
   isOpen?: boolean;
   projectId: string;
 }
@@ -33,6 +34,7 @@ export function TaskCard({
   index,
   status,
   onViewDetails,
+  onViewDoc,
   isOpen,
   projectId,
 }: TaskCardProps) {
@@ -118,6 +120,20 @@ export function TaskCard({
                   title={t('navigateToParent')}
                 >
                   <Link className="h-4 w-4" />
+                </Button>
+              )}
+              {onViewDoc && (
+                <Button
+                  variant="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onViewDoc(task);
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  title="View document"
+                >
+                  <FileText className="h-4 w-4" />
                 </Button>
               )}
               <ActionsDropdown task={task} />

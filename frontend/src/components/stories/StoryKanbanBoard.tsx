@@ -15,6 +15,7 @@ interface StoryKanbanBoardProps {
   columns: StoryKanbanColumns;
   onDragEnd: (event: DragEndEvent) => void;
   onViewStoryDetails: (task: Task) => void;
+  onViewDoc?: (task: Task) => void;
   selectedStoryId?: string;
   onCreateStory?: () => void;
   projectId: string;
@@ -30,6 +31,7 @@ function StoryKanbanBoard({
   columns,
   onDragEnd,
   onViewStoryDetails,
+  onViewDoc,
   selectedStoryId,
   onCreateStory,
   projectId,
@@ -50,6 +52,7 @@ function StoryKanbanBoard({
                   index={index}
                   status={id}
                   onViewDetails={onViewStoryDetails}
+                  onViewDoc={onViewDoc}
                   isOpen={selectedStoryId === story.id}
                   projectId={projectId}
                 />

@@ -18,6 +18,7 @@ interface TaskKanbanBoardProps {
   columns: KanbanColumns;
   onDragEnd: (event: DragEndEvent) => void;
   onViewTaskDetails: (task: TaskWithAttemptStatus) => void;
+  onViewDoc?: (task: TaskWithAttemptStatus) => void;
   selectedTaskId?: string;
   onCreateTask?: () => void;
   projectId: string;
@@ -27,6 +28,7 @@ function TaskKanbanBoard({
   columns,
   onDragEnd,
   onViewTaskDetails,
+  onViewDoc,
   selectedTaskId,
   onCreateTask,
   projectId,
@@ -85,6 +87,7 @@ function TaskKanbanBoard({
                     index={index}
                     status={statusKey}
                     onViewDetails={onViewTaskDetails}
+                    onViewDoc={onViewDoc}
                     isOpen={selectedTaskId === task.id}
                     projectId={projectId}
                   />
