@@ -996,14 +996,16 @@ export function ProjectTasks() {
 
       <div className="flex-1 min-h-0">{attemptArea}</div>
 
-      <DocumentDrawer
-        open={docDrawerTaskId !== null}
-        onOpenChange={(open) => {
-          if (!open) setDocDrawerTaskId(null);
-        }}
-        taskId={docDrawerTaskId ?? undefined}
-        taskTitle={docDrawerTaskId ? tasksById[docDrawerTaskId]?.title : undefined}
-      />
+      {docDrawerTaskId !== null && (
+        <DocumentDrawer
+          open
+          onOpenChange={(open) => {
+            if (!open) setDocDrawerTaskId(null);
+          }}
+          taskId={docDrawerTaskId}
+          taskTitle={tasksById[docDrawerTaskId]?.title}
+        />
+      )}
     </div>
   );
 }

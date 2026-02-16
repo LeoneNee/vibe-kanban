@@ -255,14 +255,16 @@ export function ProjectStories() {
         </div>
       )}
 
-      <DocumentDrawer
-        open={docDrawerTaskId !== null}
-        onOpenChange={(open) => {
-          if (!open) setDocDrawerTaskId(null);
-        }}
-        taskId={docDrawerTaskId ?? undefined}
-        taskTitle={docDrawerTaskId ? stories.find((s) => s.id === docDrawerTaskId)?.title : undefined}
-      />
+      {docDrawerTaskId !== null && (
+        <DocumentDrawer
+          open
+          onOpenChange={(open) => {
+            if (!open) setDocDrawerTaskId(null);
+          }}
+          taskId={docDrawerTaskId}
+          taskTitle={stories.find((s) => s.id === docDrawerTaskId)?.title}
+        />
+      )}
     </div>
   );
 }
