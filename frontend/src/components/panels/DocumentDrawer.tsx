@@ -63,9 +63,11 @@ export function DocumentDrawer({
   };
 
   return (
-    <Drawer open={open} onOpenChange={onOpenChange}>
+    <Drawer open={open} onOpenChange={onOpenChange} aria-labelledby="doc-drawer-title">
       <NewCardHeader className="pr-8">
-        <div className="font-semibold">{taskTitle || 'Document'}</div>
+        <h2 id="doc-drawer-title" className="text-base font-medium truncate">
+          {taskTitle || 'Document'}
+        </h2>
       </NewCardHeader>
       <NewCardContent className="flex-1 overflow-y-auto p-4">
         {renderContent()}

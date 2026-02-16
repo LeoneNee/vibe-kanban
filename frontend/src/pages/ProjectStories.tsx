@@ -263,6 +263,14 @@ export function ProjectStories() {
           }}
           taskId={docDrawerTaskId}
           taskTitle={stories.find((s) => s.id === docDrawerTaskId)?.title}
+          onStartBrainstorm={
+            projectId
+              ? () => {
+                  setDocDrawerTaskId(null);
+                  navigate(paths.storyBrainstorm(projectId));
+                }
+              : undefined
+          }
         />
       )}
     </div>
