@@ -53,6 +53,8 @@ const Drawer = React.forwardRef<
       />
       <div
         ref={ref}
+        role="dialog"
+        aria-modal="true"
         className={cn(
           'relative z-[9999] flex flex-col w-full max-w-2xl h-full bg-primary shadow-lg animate-in slide-in-from-right duration-300',
           className

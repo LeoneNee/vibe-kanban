@@ -1004,6 +1004,16 @@ export function ProjectTasks() {
           }}
           taskId={docDrawerTaskId}
           taskTitle={tasksById[docDrawerTaskId]?.title}
+          onStartBrainstorm={
+            projectId && storyId
+              ? () => {
+                  setDocDrawerTaskId(null);
+                  navigate(
+                    paths.taskBrainstorm(projectId, storyId, docDrawerTaskId)
+                  );
+                }
+              : undefined
+          }
         />
       )}
     </div>
