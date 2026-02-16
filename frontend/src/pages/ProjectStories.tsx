@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, Plus, Sparkles } from 'lucide-react';
+import { DocumentDrawer } from '@/components/panels/DocumentDrawer';
 
 import { Loader } from '@/components/ui/loader';
 import { Card, CardContent } from '@/components/ui/card';
@@ -31,6 +32,8 @@ export function ProjectStories() {
     isLoading: projectLoading,
     error: projectError,
   } = useProject();
+
+  const [docDrawerTaskId, setDocDrawerTaskId] = useState<string | null>(null);
 
   const { query: searchQuery } = useSearch();
 
@@ -107,6 +110,10 @@ export function ProjectStories() {
       Object.values(kanbanColumns).some((items) => items && items.length > 0),
     [kanbanColumns]
   );
+
+  const handleViewDoc = useCallback((task: Task) => {
+    setDocDrawerTaskId(task.id);
+  }, []);
 
   const handleViewStoryDetails = useCallback(
     (story: Task) => {
@@ -240,12 +247,22 @@ export function ProjectStories() {
             columns={kanbanColumns}
             onDragEnd={handleDragEnd}
             onViewStoryDetails={handleViewStoryDetails}
+            onViewDoc={handleViewDoc}
             selectedStoryId={selectedStory?.id}
             onCreateStory={handleCreateStory}
             projectId={projectId!}
           />
         </div>
       )}
+
+      <DocumentDrawer
+        open={docDrawerTaskId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDocDrawerTaskId(null);
+        }}
+        taskId={docDrawerTaskId ?? undefined}
+        taskTitle={docDrawerTaskId ? stories.find((s) => s.id === docDrawerTaskId)?.title : undefined}
+      />
     </div>
   );
 }

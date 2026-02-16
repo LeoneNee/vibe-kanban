@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { showcases } from '@/config/showcases';
 import { useUserSystem } from '@/components/ConfigProvider';
 import { useWorkspaceCount } from '@/hooks/useWorkspaceCount';
 import { usePostHog } from 'posthog-js/react';
+import { DocumentDrawer } from '@/components/panels/DocumentDrawer';
 
 import { useSearch } from '@/contexts/SearchContext';
 import { useProject } from '@/contexts/ProjectContext';
@@ -143,6 +144,7 @@ export function ProjectTasks() {
   const isXL = useMediaQuery('(min-width: 1280px)');
   const isMobile = !isXL;
   const posthog = usePostHog();
+  const [docDrawerTaskId, setDocDrawerTaskId] = useState<string | null>(null);
 
   const {
     projectId,
@@ -617,6 +619,10 @@ export function ProjectTasks() {
     }
   }, [projectId, storyId, navigate]);
 
+  const handleViewDoc = useCallback((task: Task) => {
+    setDocDrawerTaskId(task.id);
+  }, []);
+
   const handleViewTaskDetails = useCallback(
     (task: Task, attemptIdToShow?: string) => {
       if (!projectId) return;
@@ -823,6 +829,7 @@ export function ProjectTasks() {
           columns={kanbanColumns}
           onDragEnd={handleDragEnd}
           onViewTaskDetails={handleViewTaskDetails}
+          onViewDoc={handleViewDoc}
           selectedTaskId={selectedTask?.id}
           onCreateTask={handleCreateNewTask}
           projectId={projectId!}
@@ -988,6 +995,15 @@ export function ProjectTasks() {
       )}
 
       <div className="flex-1 min-h-0">{attemptArea}</div>
+
+      <DocumentDrawer
+        open={docDrawerTaskId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDocDrawerTaskId(null);
+        }}
+        taskId={docDrawerTaskId ?? undefined}
+        taskTitle={docDrawerTaskId ? tasksById[docDrawerTaskId]?.title : undefined}
+      />
     </div>
   );
 }
