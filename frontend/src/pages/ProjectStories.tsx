@@ -11,17 +11,14 @@ import { Button } from '@/components/ui/button';
 import { useProject } from '@/contexts/ProjectContext';
 import { useSearch } from '@/contexts/SearchContext';
 import { useProjectStories } from '@/hooks/useProjectStories';
-import StoryKanbanBoard, {
-  type StoryKanbanColumns,
-} from '@/components/stories/StoryKanbanBoard';
+import StoryKanbanBoard from '@/components/stories/StoryKanbanBoard';
+import { groupStoriesByStatus } from '@/components/stories/storyKanbanUtils';
+import type { StoryKanbanColumns } from '@/components/stories/storyKanbanUtils';
 import type { DragEndEvent } from '@/components/ui/shadcn-io/kanban';
 import { paths } from '@/lib/paths';
 import { tasksApi } from '@/lib/api';
 import { openTaskForm } from '@/lib/openTaskForm';
 import type { Task, TaskStatus } from 'shared/types';
-
-const normalizeStatus = (status: string): TaskStatus =>
-  status.toLowerCase() as TaskStatus;
 
 export function ProjectStories() {
   const navigate = useNavigate();
@@ -56,12 +53,6 @@ export function ProjectStories() {
   const normalizedSearch = searchQuery.trim().toLowerCase();
 
   const kanbanColumns = useMemo(() => {
-    const columns: StoryKanbanColumns = {
-      backlog: [],
-      inprogress: [],
-      done: [],
-    };
-
     const matchesSearch = (
       title: string,
       description?: string | null
@@ -75,19 +66,11 @@ export function ProjectStories() {
       );
     };
 
-    // Group: backlog = todo + cancelled, inprogress = inprogress + inreview, done = done
-    stories.forEach((story) => {
-      if (!matchesSearch(story.title, story.description)) return;
+    const filtered = stories.filter((story) =>
+      matchesSearch(story.title, story.description)
+    );
 
-      const status = normalizeStatus(story.status);
-      if (status === 'todo' || status === 'cancelled') {
-        columns.backlog.push(story);
-      } else if (status === 'inprogress' || status === 'inreview') {
-        columns.inprogress.push(story);
-      } else if (status === 'done') {
-        columns.done.push(story);
-      }
-    });
+    const columns = groupStoriesByStatus(filtered, { excludeBrainstorm: true });
 
     // Sort each column by recency
     (Object.keys(columns) as Array<keyof StoryKanbanColumns>).forEach((key) => {

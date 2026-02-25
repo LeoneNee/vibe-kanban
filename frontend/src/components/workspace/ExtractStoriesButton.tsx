@@ -1,15 +1,13 @@
-import { useMemo, useState, useCallback } from 'react';
-import { Sparkles, Loader2 } from 'lucide-react';
+import { useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { useEntries } from '@/contexts/EntriesContext';
 import { useTask } from '@/hooks/useTask';
-import { Button } from '@/components/ui/button';
-import { ExtractStoriesDialog } from '@/components/dialogs/stories/ExtractStoriesDialog';
 import { extractJsonCardsFromEntries } from '@/utils/extractJsonCards';
-import { useCompleteBrainstorm } from '@/hooks/useCompleteBrainstorm';
-import { hasAllTasksGenerated } from '@/utils/checkBrainstormComplete';
-import { useUserSystem } from '@/components/ConfigProvider';
+import { isBrainstormFullyComplete } from '@/utils/checkBrainstormComplete';
+import { useAutoExtractStories } from '@/hooks/useAutoExtractStories';
+import { paths } from '@/lib/paths';
 import type { WorkspaceWithSession } from '@/types/attempt';
-import { BaseCodingAgent } from 'shared/types';
 
 interface ExtractStoriesButtonProps {
   workspaceWithSession: WorkspaceWithSession | undefined;
@@ -19,104 +17,66 @@ export function ExtractStoriesButton({
   workspaceWithSession,
 }: ExtractStoriesButtonProps) {
   const { entries } = useEntries();
+  const navigate = useNavigate();
   const { data: task } = useTask(workspaceWithSession?.task_id ?? '', {
     enabled: !!workspaceWithSession?.task_id,
   });
-  const [isCompleting, setIsCompleting] = useState(false);
-  const { config } = useUserSystem();
-  const sessionId = workspaceWithSession?.session?.id;
-
-  const { complete, isCompleting: isApiCompleting } = useCompleteBrainstorm({
-    sessionId,
-  });
 
   const projectId = task?.project_id;
-
-  // Only show for brainstorm tasks
   const isBrainstormTask = task?.title?.includes('Brainstorm') ?? false;
 
-  // Extract cards from conversation
   const extractedCards = useMemo(
     () => (isBrainstormTask ? extractJsonCardsFromEntries(entries) : []),
     [entries, isBrainstormTask]
   );
 
-  // Handle extract click
-  const handleExtract = useCallback(async () => {
-    if (!projectId) return;
+  const isComplete =
+    isBrainstormTask &&
+    isBrainstormFullyComplete(extractedCards) &&
+    !!projectId;
 
-    // Check if all Story have tasks
-    const allHaveTasks = hasAllTasksGenerated(extractedCards);
+  const { status, error, storiesCreated, tasksCreated } =
+    useAutoExtractStories(extractedCards, projectId ?? undefined, isComplete);
 
-    if (allHaveTasks) {
-      // Directly open dialog
-      ExtractStoriesDialog.show({
-        cards: extractedCards,
-        projectId,
-      });
-    } else {
-      // Need to complete brainstorm chain
-      setIsCompleting(true);
-      try {
-        const executor = config?.executor_profile?.executor ?? BaseCodingAgent.CLAUDE_CODE;
-
-        // Send message to trigger story-doc-generator and task-splitter
-        await complete(extractedCards, executor);
-
-        // Re-extract JSON from entries
-        const updatedCards = extractJsonCardsFromEntries(entries);
-
-        // Check if tasks were actually generated
-        const nowHasTasks = hasAllTasksGenerated(updatedCards);
-        if (nowHasTasks) {
-          console.log(`Brainstorm completed: Generated tasks for ${updatedCards.length} stories.`);
-        }
-
-        // Open dialog
-        ExtractStoriesDialog.show({
-          cards: updatedCards,
-          projectId,
-        });
-      } catch (err) {
-        console.error('Failed to complete brainstorm:', err);
-        console.warn('An error occurred while generating tasks. Showing current stories.');
-
-        // Even if failed, still show current cards
-        ExtractStoriesDialog.show({
-          cards: extractedCards,
-          projectId,
-        });
-      } finally {
-        setIsCompleting(false);
-      }
+  // Auto-navigate when done
+  useEffect(() => {
+    if (status === 'done' && projectId) {
+      navigate(paths.projectStories(projectId));
     }
-  }, [extractedCards, projectId, complete, config, entries]);
+  }, [status, projectId, navigate]);
 
-  // Don't show button if not a brainstorm task, no cards, or no project
-  if (!isBrainstormTask || extractedCards.length === 0 || !projectId) {
-    return null;
-  }
-
-  const isLoading = isCompleting || isApiCompleting;
+  if (status === 'idle') return null;
 
   return (
-    <Button
-      onClick={handleExtract}
-      disabled={isLoading}
-      className="fixed bottom-6 right-6 z-50 shadow-lg"
-      size="lg"
-    >
-      {isLoading ? (
+    <div className="fixed bottom-6 right-6 z-50 rounded-lg bg-background border shadow-lg px-4 py-3 flex items-center gap-3">
+      {status === 'extracting' && (
         <>
-          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-          Completing brainstorm...
-        </>
-      ) : (
-        <>
-          <Sparkles className="mr-2 h-5 w-5" />
-          Extract {extractedCards.length} {extractedCards.length === 1 ? 'Story' : 'Stories'}
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          <span className="text-sm">
+            正在创建 {extractedCards.length} 个 Stories...
+          </span>
         </>
       )}
-    </Button>
+      {status === 'committing' && (
+        <>
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          <span className="text-sm">正在提交到 Git...</span>
+        </>
+      )}
+      {status === 'done' && (
+        <>
+          <CheckCircle2 className="h-5 w-5 text-green-500" />
+          <span className="text-sm">
+            已创建 {storiesCreated} 个 Stories，{tasksCreated} 个 Tasks
+          </span>
+        </>
+      )}
+      {status === 'error' && (
+        <>
+          <AlertTriangle className="h-5 w-5 text-destructive" />
+          <span className="text-sm text-destructive">{error}</span>
+        </>
+      )}
+    </div>
   );
 }

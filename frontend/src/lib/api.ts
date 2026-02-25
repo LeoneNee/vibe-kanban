@@ -1,5 +1,6 @@
 // Import all necessary types from shared types
 
+import { toast } from 'sonner';
 import {
   ApprovalStatus,
   ApiResponse,
@@ -90,6 +91,7 @@ import {
   Workspace,
   StartReviewRequest,
   ReviewError,
+  DocSection,
 } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { createWorkspaceWithSession } from '@/types/attempt';
@@ -189,6 +191,7 @@ export const handleApiResponse = async <T, E = T>(
       endpoint: response.url,
       timestamp: new Date().toISOString(),
     });
+    toast.error(errorMessage);
     throw new ApiError<E>(errorMessage, response.status, response);
   }
 
@@ -210,6 +213,7 @@ export const handleApiResponse = async <T, E = T>(
         timestamp: new Date().toISOString(),
       });
       // Throw a properly typed error with the error data
+      toast.error(result.message || 'API request failed');
       throw new ApiError<E>(
         result.message || 'API request failed',
         response.status,
@@ -225,6 +229,7 @@ export const handleApiResponse = async <T, E = T>(
       endpoint: response.url,
       timestamp: new Date().toISOString(),
     });
+    toast.error(result.message || 'API request failed');
     throw new ApiError<E>(
       result.message || 'API request failed',
       response.status,
@@ -359,6 +364,20 @@ export const projectsApi = {
     );
     return handleApiResponse<void>(response);
   },
+
+  gitCommit: async (
+    projectId: string,
+    message: string
+  ): Promise<{ committed: boolean }> => {
+    const response = await makeRequest(
+      `/api/projects/${projectId}/git-commit`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      }
+    );
+    return handleApiResponse<{ committed: boolean }>(response);
+  },
 };
 
 // Task Management APIs
@@ -427,7 +446,7 @@ export const tasksApi = {
 
   updateDoc: async (
     taskId: string,
-    section: 'api_spec' | 'test_cases' | 'dependencies' | 'changelog' | 'implementation_hints',
+    section: DocSection,
     content: string
   ): Promise<void> => {
     const response = await makeRequest(`/api/tasks/${taskId}/doc`, {

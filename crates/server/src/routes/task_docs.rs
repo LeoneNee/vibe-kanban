@@ -9,9 +9,7 @@ use db::models::{
 };
 use deployment::Deployment;
 use serde::{Deserialize, Serialize};
-use services::task_doc::{
-    append_to_changelog, get_task_doc_path, section_header_from_doc_section, update_doc_section,
-};
+use services::task_doc::{append_to_changelog, get_task_doc_path, update_doc_section};
 use tokio::fs;
 use ts_rs::TS;
 
@@ -26,6 +24,56 @@ pub enum DocSection {
     Dependencies,
     Changelog,
     ImplementationHints,
+}
+
+impl DocSection {
+    /// 直接返回对应的 Markdown 章节标题，无需经过中间字符串映射。
+    pub fn section_header(&self) -> &'static str {
+        match self {
+            DocSection::ApiSpec => "## API 规格",
+            DocSection::TestCases => "## 测试用例",
+            DocSection::Dependencies => "## 依赖和风险",
+            DocSection::Changelog => "## 更新日志",
+            DocSection::ImplementationHints => "## 实现要点",
+        }
+    }
+}
+
+#[cfg(test)]
+mod doc_section_tests {
+    use super::DocSection;
+
+    #[test]
+    fn section_header_returns_correct_chinese_headers() {
+        assert_eq!(DocSection::ApiSpec.section_header(), "## API 规格");
+        assert_eq!(DocSection::TestCases.section_header(), "## 测试用例");
+        assert_eq!(DocSection::Dependencies.section_header(), "## 依赖和风险");
+        assert_eq!(DocSection::Changelog.section_header(), "## 更新日志");
+        assert_eq!(
+            DocSection::ImplementationHints.section_header(),
+            "## 实现要点"
+        );
+    }
+
+    #[test]
+    fn section_header_covers_all_variants() {
+        // 确保每个枚举变体都返回非空且以 "## " 开头的标题
+        let variants = [
+            DocSection::ApiSpec,
+            DocSection::TestCases,
+            DocSection::Dependencies,
+            DocSection::Changelog,
+            DocSection::ImplementationHints,
+        ];
+        for variant in &variants {
+            let header = variant.section_header();
+            assert!(
+                header.starts_with("## "),
+                "header '{header}' should start with '## '"
+            );
+            assert!(!header.trim_start_matches("## ").is_empty(), "header body should not be empty");
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, TS)]
@@ -93,13 +141,24 @@ pub async fn get_task_doc(
 ) -> Result<String, ApiError> {
     let pool = &deployment.db().pool;
 
-    // 使用新的辅助函数获取 parent story
-    let parent_story = get_parent_story_for_task(pool, &task).await?;
+    // 根据 task_type 解析文档路径。
+    // Story 可能没有 workspace（新建时尚未开始执行），直接从 project repo 解析路径。
+    // Task 则需要通过 workspace 获取 repo，若 workspace 不存在则报错。
+    let doc_path = match task.task_type {
+        TaskType::Story => {
+            let repo_path = resolve_repo_path_for_project(pool, task.project_id)
+                .await
+                .ok_or_else(|| ApiError::BadRequest("No repo found for project".to_string()))?;
+            get_task_doc_path(&task, None, &repo_path)
+        }
+        TaskType::Task => {
+            let parent_story = get_parent_story_for_task(pool, &task).await?;
+            let (_workspace, repo) =
+                get_workspace_and_repo_for_task(pool, &task, parent_story.as_ref()).await?;
+            get_task_doc_path(&task, parent_story.as_ref(), &repo.path)
+        }
+    };
 
-    // 获取 workspace 和 repo
-    let (_workspace, repo) = get_workspace_and_repo_for_task(pool, &task, parent_story.as_ref()).await?;
-
-    let doc_path = get_task_doc_path(&task, parent_story.as_ref(), &repo.path);
     match fs::read_to_string(doc_path).await {
         Ok(contents) => Ok(contents),
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
@@ -116,36 +175,34 @@ pub async fn update_task_doc(
 ) -> Result<StatusCode, ApiError> {
     let pool = &deployment.db().pool;
 
-    // 使用新的辅助函数获取 parent story
-    let parent_story = get_parent_story_for_task(pool, &task).await?;
-
-    // 获取 workspace 和 repo
-    let (_workspace, repo) = get_workspace_and_repo_for_task(pool, &task, parent_story.as_ref()).await?;
-
-    let doc_path = get_task_doc_path(&task, parent_story.as_ref(), &repo.path);
+    // 根据 task_type 解析文档路径，与 get_task_doc 和 write_task_doc 保持一致。
+    // Story 可能没有 workspace，直接从 project repo 解析路径。
+    let doc_path = match task.task_type {
+        TaskType::Story => {
+            let repo_path = resolve_repo_path_for_project(pool, task.project_id)
+                .await
+                .ok_or_else(|| ApiError::BadRequest("No repo found for project".to_string()))?;
+            get_task_doc_path(&task, None, &repo_path)
+        }
+        TaskType::Task => {
+            let parent_story = get_parent_story_for_task(pool, &task).await?;
+            let (_workspace, repo) =
+                get_workspace_and_repo_for_task(pool, &task, parent_story.as_ref()).await?;
+            get_task_doc_path(&task, parent_story.as_ref(), &repo.path)
+        }
+    };
 
     // Read existing doc
     let content = fs::read_to_string(&doc_path)
         .await
         .map_err(|e| ApiError::BadRequest(format!("Doc not found: {}", e)))?;
 
-    // Update section based on type
-    let section_name = match input.section {
-        DocSection::ApiSpec => "api_spec",
-        DocSection::TestCases => "test_cases",
-        DocSection::Dependencies => "dependencies",
-        DocSection::Changelog => "changelog",
-        DocSection::ImplementationHints => "implementation_hints",
-    };
-
+    // Update section based on type — directly use the enum's section_header() method,
+    // eliminating the intermediate string mapping layer.
     let updated_content = if matches!(input.section, DocSection::Changelog) {
         append_to_changelog(&content, &input.content)
     } else {
-        update_doc_section(
-            &content,
-            section_header_from_doc_section(section_name),
-            &input.content,
-        )
+        update_doc_section(&content, input.section.section_header(), &input.content)
     }
     .map_err(|e| ApiError::BadRequest(format!("Failed to update: {}", e)))?;
 

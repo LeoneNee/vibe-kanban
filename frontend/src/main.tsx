@@ -9,6 +9,7 @@ import * as Sentry from '@sentry/react';
 import i18n from './i18n';
 import posthog from 'posthog-js';
 import { PostHogProvider } from 'posthog-js/react';
+import { Toaster } from 'sonner';
 // Import modal type definitions
 import './types/modals';
 
@@ -73,6 +74,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <ClickToComponent />
           <VibeKanbanWebCompanion />
           <App />
+          <Toaster position="bottom-right" richColors />
           {/*<TanStackDevtools plugins={[FormDevtoolsPlugin()]} />*/}
           {/* <ReactQueryDevtools initialIsOpen={false} /> */}
         </Sentry.ErrorBoundary>

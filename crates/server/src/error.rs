@@ -265,10 +265,84 @@ impl IntoResponse for ApiError {
             ApiError::BadRequest(msg) => msg.clone(),
             ApiError::Conflict(msg) => msg.clone(),
             ApiError::Forbidden(msg) => msg.clone(),
-            _ => format!("{}: {}", error_type, self),
+            _ => {
+                tracing::error!(error = %self, error_type = error_type, "Internal error occurred");
+                "An internal error occurred. Please try again later.".to_string()
+            }
         };
         let response = ApiResponse::<()>::error(&error_message);
         (status_code, Json(response)).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+    use axum::response::IntoResponse;
+
+    #[tokio::test]
+    async fn test_default_branch_does_not_leak_internal_details() {
+        // 构造一个落入默认 `_ =>` 分支的错误：IoError
+        // IO 错误消息中会包含系统内部路径或错误描述，不应暴露给客户端
+        let internal_msg = "secret internal path /etc/shadow permission denied";
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, internal_msg);
+        let api_err = ApiError::Io(io_err);
+
+        let response = api_err.into_response();
+
+        // 验证状态码为 500
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        // 读取响应体
+        let body_bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("failed to read response body");
+        let body_str = std::str::from_utf8(&body_bytes).expect("body is not valid UTF-8");
+
+        // 验证响应体不包含内部错误路径或详细信息
+        assert!(
+            !body_str.contains(internal_msg),
+            "Response body must NOT contain internal error details, but got: {body_str}"
+        );
+        assert!(
+            !body_str.contains("/etc/shadow"),
+            "Response body must NOT contain internal paths, but got: {body_str}"
+        );
+
+        // 验证响应体包含通用错误提示
+        assert!(
+            body_str.contains("An internal error occurred"),
+            "Response body must contain generic error message, but got: {body_str}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_default_branch_database_error_does_not_leak_details() {
+        // 数据库错误同样落入默认分支，包含敏感的 SQL 查询信息
+        let db_err = sqlx::Error::RowNotFound;
+        let api_err = ApiError::Database(db_err);
+
+        let response = api_err.into_response();
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let body_bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("failed to read response body");
+        let body_str = std::str::from_utf8(&body_bytes).expect("body is not valid UTF-8");
+
+        // 不应包含 "DatabaseError: ..." 这样的内部格式
+        assert!(
+            !body_str.contains("DatabaseError:"),
+            "Response body must NOT leak error_type prefix, but got: {body_str}"
+        );
+
+        // 应包含通用错误提示
+        assert!(
+            body_str.contains("An internal error occurred"),
+            "Response body must contain generic error message, but got: {body_str}"
+        );
     }
 }
 

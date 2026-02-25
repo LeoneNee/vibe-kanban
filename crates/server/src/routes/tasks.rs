@@ -255,8 +255,9 @@ pub async fn create_task(
             }
         }
         TaskType::Task => {
-            // For Task: try to resolve repo from parent
-            try_generate_task_doc(&deployment.db().pool, &task, None).await;
+            // For Task: resolve repo from project (workspace may not exist yet for newly created stories)
+            let repo_path = resolve_repo_path_for_project(&deployment.db().pool, task.project_id).await;
+            try_generate_task_doc(&deployment.db().pool, &task, repo_path).await;
         }
     }
 

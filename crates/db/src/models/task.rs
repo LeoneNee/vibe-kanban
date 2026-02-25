@@ -86,6 +86,9 @@ pub struct Task {
     pub tag: Option<TaskTag>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Number of child tasks (populated by list queries, None for point lookups)
+    #[ts(optional)]
+    pub child_count: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -256,6 +259,7 @@ ORDER BY t.created_at DESC"#,
                     tag: rec.tag,
                     created_at: rec.created_at,
                     updated_at: rec.updated_at,
+                    child_count: None,
                 },
                 has_in_progress_attempt: rec.has_in_progress_attempt != 0,
                 last_attempt_failed: rec.last_attempt_failed != 0,
@@ -275,7 +279,7 @@ ORDER BY t.created_at DESC"#,
         use sqlx::QueryBuilder;
 
         let mut builder: QueryBuilder<Sqlite> = QueryBuilder::new(
-            "SELECT id, project_id, title, description, status, task_type, parent_workspace_id, parent_task_id, workflow_state, tag, created_at, updated_at FROM tasks WHERE project_id = "
+            "SELECT id, project_id, title, description, status, task_type, parent_workspace_id, parent_task_id, workflow_state, tag, created_at, updated_at, (SELECT COUNT(*) FROM tasks AS child WHERE child.parent_task_id = tasks.id) AS child_count FROM tasks WHERE project_id = "
         );
         builder.push_bind(project_id);
 
@@ -307,7 +311,7 @@ ORDER BY t.created_at DESC"#,
     pub async fn find_by_id(pool: &SqlitePool, id: Uuid) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", NULL as "child_count: i64"
                FROM tasks
                WHERE id = $1"#,
             id
@@ -319,7 +323,7 @@ ORDER BY t.created_at DESC"#,
     pub async fn find_by_rowid(pool: &SqlitePool, rowid: i64) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", NULL as "child_count: i64"
                FROM tasks
                WHERE rowid = $1"#,
             rowid
@@ -339,7 +343,7 @@ ORDER BY t.created_at DESC"#,
             Task,
             r#"INSERT INTO tasks (id, project_id, title, description, status, task_type, parent_workspace_id, parent_task_id, workflow_state, tag)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
+               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", NULL as "child_count: i64""#,
             task_id,
             data.project_id,
             data.title,
@@ -372,7 +376,7 @@ ORDER BY t.created_at DESC"#,
             r#"UPDATE tasks
                SET title = $3, description = $4, status = $5, parent_workspace_id = $6, parent_task_id = $7, workflow_state = COALESCE($8, workflow_state), tag = COALESCE($9, tag), updated_at = datetime('now', 'subsec')
                WHERE id = $1 AND project_id = $2
-               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
+               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", NULL as "child_count: i64""#,
             id,
             project_id,
             title,
@@ -413,7 +417,7 @@ ORDER BY t.created_at DESC"#,
             r#"UPDATE tasks
                SET workflow_state = $2, updated_at = datetime('now', 'subsec')
                WHERE id = $1
-               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
+               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", NULL as "child_count: i64""#,
             id,
             workflow_state
         )
@@ -461,7 +465,7 @@ ORDER BY t.created_at DESC"#,
         parent_task_id: Uuid,
     ) -> Result<Vec<Self>, sqlx::Error> {
         sqlx::query_as::<_, Task>(
-            r#"SELECT id, project_id, title, description, status, task_type, parent_workspace_id, parent_task_id, workflow_state, tag, created_at, updated_at
+            r#"SELECT id, project_id, title, description, status, task_type, parent_workspace_id, parent_task_id, workflow_state, tag, created_at, updated_at, NULL as child_count
                FROM tasks
                WHERE parent_task_id = $1
                ORDER BY created_at DESC"#,
@@ -503,7 +507,7 @@ ORDER BY t.created_at DESC"#,
         // Find only child tasks that have this workspace as their parent
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", workflow_state as "workflow_state!: WorkflowState", tag as "tag: TaskTag", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", NULL as "child_count: i64"
                FROM tasks
                WHERE parent_workspace_id = $1
                ORDER BY created_at DESC"#,
@@ -574,6 +578,91 @@ ORDER BY t.created_at DESC"#,
     }
 }
 
+/// Builder struct for constructing `Task::update` call arguments.
+///
+/// Wraps the individual parameters of `Task::update` into a single struct
+/// with optional fields and builder methods, making call sites more readable
+/// and less error-prone when only a subset of fields need updating.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let params = UpdateTaskParams::new(task_id, project_id)
+///     .with_title("New Title".into())
+///     .with_status(TaskStatus::InProgress);
+/// ```
+#[derive(Debug)]
+pub struct UpdateTaskParams {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub title: Option<String>,
+    pub description: Option<Option<String>>,
+    pub status: Option<TaskStatus>,
+    pub parent_workspace_id: Option<Option<Uuid>>,
+    pub parent_task_id: Option<Option<Uuid>>,
+    pub workflow_state: Option<Option<WorkflowState>>,
+    pub tag: Option<Option<TaskTag>>,
+}
+
+impl UpdateTaskParams {
+    /// Create a new `UpdateTaskParams` with required fields set and all optional fields as `None`.
+    pub fn new(id: Uuid, project_id: Uuid) -> Self {
+        Self {
+            id,
+            project_id,
+            title: None,
+            description: None,
+            status: None,
+            parent_workspace_id: None,
+            parent_task_id: None,
+            workflow_state: None,
+            tag: None,
+        }
+    }
+
+    /// Set the title field.
+    pub fn with_title(mut self, title: String) -> Self {
+        self.title = Some(title);
+        self
+    }
+
+    /// Set the description field. Pass `None` to explicitly clear the description.
+    pub fn with_description(mut self, description: Option<String>) -> Self {
+        self.description = Some(description);
+        self
+    }
+
+    /// Set the status field.
+    pub fn with_status(mut self, status: TaskStatus) -> Self {
+        self.status = Some(status);
+        self
+    }
+
+    /// Set the parent_workspace_id field. Pass `None` to explicitly clear it.
+    pub fn with_parent_workspace_id(mut self, parent_workspace_id: Option<Uuid>) -> Self {
+        self.parent_workspace_id = Some(parent_workspace_id);
+        self
+    }
+
+    /// Set the parent_task_id field. Pass `None` to explicitly clear it.
+    pub fn with_parent_task_id(mut self, parent_task_id: Option<Uuid>) -> Self {
+        self.parent_task_id = Some(parent_task_id);
+        self
+    }
+
+    /// Set the workflow_state field. Pass `None` to explicitly clear it.
+    pub fn with_workflow_state(mut self, workflow_state: Option<WorkflowState>) -> Self {
+        self.workflow_state = Some(workflow_state);
+        self
+    }
+
+    /// Set the tag field. Pass `None` to explicitly clear it.
+    pub fn with_tag(mut self, tag: Option<TaskTag>) -> Self {
+        self.tag = Some(tag);
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -630,5 +719,73 @@ mod tests {
         let tag: Option<TaskTag> = Some(TaskTag::Test);
         let json = serde_json::to_string(&tag).unwrap();
         assert_eq!(json, "\"test\"");
+    }
+
+    #[test]
+    fn update_task_params_builder_defaults_to_none() {
+        let params = UpdateTaskParams::new(Uuid::new_v4(), Uuid::new_v4());
+        assert!(params.title.is_none());
+        assert!(params.description.is_none());
+        assert!(params.status.is_none());
+        assert!(params.parent_workspace_id.is_none());
+        assert!(params.parent_task_id.is_none());
+        assert!(params.workflow_state.is_none());
+        assert!(params.tag.is_none());
+    }
+
+    #[test]
+    fn update_task_params_builder_sets_fields() {
+        let id = Uuid::new_v4();
+        let project_id = Uuid::new_v4();
+        let params = UpdateTaskParams::new(id, project_id)
+            .with_title("New Title".into())
+            .with_status(TaskStatus::Done);
+
+        assert_eq!(params.id, id);
+        assert_eq!(params.project_id, project_id);
+        assert_eq!(params.title.unwrap(), "New Title");
+        assert!(matches!(params.status.unwrap(), TaskStatus::Done));
+        // 未设置的字段仍为 None
+        assert!(params.description.is_none());
+        assert!(params.tag.is_none());
+    }
+
+    #[test]
+    fn update_task_params_builder_sets_all_optional_fields() {
+        let workspace_id = Uuid::new_v4();
+        let task_id = Uuid::new_v4();
+        let params = UpdateTaskParams::new(Uuid::new_v4(), Uuid::new_v4())
+            .with_title("Title".into())
+            .with_description(Some("Description".into()))
+            .with_status(TaskStatus::InProgress)
+            .with_parent_workspace_id(Some(workspace_id))
+            .with_parent_task_id(Some(task_id))
+            .with_workflow_state(Some(WorkflowState::Planned))
+            .with_tag(Some(TaskTag::Refactor));
+
+        assert_eq!(params.title.unwrap(), "Title");
+        assert_eq!(params.description.unwrap(), Some("Description".into()));
+        assert!(matches!(params.status.unwrap(), TaskStatus::InProgress));
+        assert_eq!(params.parent_workspace_id.unwrap(), Some(workspace_id));
+        assert_eq!(params.parent_task_id.unwrap(), Some(task_id));
+        assert!(matches!(
+            params.workflow_state.unwrap(),
+            Some(WorkflowState::Planned)
+        ));
+        assert!(matches!(params.tag.unwrap(), Some(TaskTag::Refactor)));
+    }
+
+    #[test]
+    fn update_task_params_builder_can_clear_nullable_fields() {
+        // 验证 None 内层值可以被正确传递（用于显式清除字段）
+        let params = UpdateTaskParams::new(Uuid::new_v4(), Uuid::new_v4())
+            .with_description(None)
+            .with_parent_workspace_id(None)
+            .with_tag(None);
+
+        // 外层 Some 表示"已设置这个字段"，内层 None 表示"清除该字段的值"
+        assert_eq!(params.description, Some(None));
+        assert_eq!(params.parent_workspace_id, Some(None));
+        assert_eq!(params.tag, Some(None));
     }
 }

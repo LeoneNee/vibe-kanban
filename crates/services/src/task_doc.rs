@@ -12,9 +12,15 @@ pub fn slugify(s: &str) -> String {
         .collect::<Vec<_>>()
         .join("-");
 
-    // 如果 slug 为空（如纯中文标题），使用 fallback
+    // 如果 slug 为空（如纯中文标题），使用 FNV-1a 确定性哈希作为 fallback
+    // 注意：不使用 DefaultHasher，因为其算法不保证跨 Rust 版本稳定
     if slug.is_empty() {
-        format!("task-{}", &uuid::Uuid::new_v4().to_string()[..8])
+        let mut hash: u32 = 0x811c_9dc5; // FNV-1a 32-bit offset basis
+        for byte in s.as_bytes() {
+            hash ^= *byte as u32;
+            hash = hash.wrapping_mul(0x0100_0193); // FNV-1a 32-bit prime
+        }
+        format!("task-{:08x}", hash)
     } else {
         slug
     }
@@ -88,6 +94,22 @@ mod tests {
     }
 
     #[test]
+    fn test_slugify_chinese_deterministic() {
+        // 相同的中文输入必须生成相同的 slug（确定性）
+        let result1 = slugify("用户登录功能");
+        let result2 = slugify("用户登录功能");
+        assert_eq!(result1, result2, "slugify must be deterministic for the same input");
+    }
+
+    #[test]
+    fn test_slugify_different_chinese_different_slug() {
+        // 不同的中文输入应该生成不同的 slug
+        let result1 = slugify("用户登录功能");
+        let result2 = slugify("商品管理系统");
+        assert_ne!(result1, result2, "different Chinese inputs should produce different slugs");
+    }
+
+    #[test]
     fn test_slugify_mixed_chinese_english() {
         // 中英混合应该保留英文部分
         assert_eq!(slugify("用户 Login API"), "login-api");
@@ -115,6 +137,7 @@ mod path_tests {
             tag: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            child_count: None,
         }
     }
 
@@ -543,7 +566,16 @@ pub fn append_to_changelog(doc_content: &str, new_entry: &str) -> Result<String,
     Ok(result.join("\n"))
 }
 
-/// Convert DocSection enum variant name to Chinese section header
+/// Convert DocSection enum variant name to Chinese section header.
+///
+/// # Deprecated
+///
+/// 请使用 `DocSection::section_header()` 方法替代，该方法直接在枚举上操作，
+/// 无需经过中间字符串映射层，参见 `server::routes::task_docs::DocSection`。
+#[deprecated(
+    since = "0.0.161",
+    note = "Use DocSection::section_header() directly on the enum variant instead of converting to a string first"
+)]
 pub fn section_header_from_doc_section(section: &str) -> &'static str {
     match section {
         "api_spec" => "## API 规格",

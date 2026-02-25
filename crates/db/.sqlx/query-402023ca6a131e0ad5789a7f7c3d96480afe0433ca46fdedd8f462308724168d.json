@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "UPDATE tasks\n               SET title = $3, description = $4, status = $5, parent_workspace_id = $6, parent_task_id = $7, workflow_state = COALESCE($8, workflow_state), tag = COALESCE($9, tag), updated_at = datetime('now', 'subsec')\n               WHERE id = $1 AND project_id = $2\n               RETURNING id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", task_type as \"task_type!: TaskType\", parent_workspace_id as \"parent_workspace_id: Uuid\", parent_task_id as \"parent_task_id: Uuid\", workflow_state as \"workflow_state!: WorkflowState\", tag as \"tag: TaskTag\", created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"",
+  "query": "UPDATE tasks\n               SET title = $3, description = $4, status = $5, parent_workspace_id = $6, parent_task_id = $7, workflow_state = COALESCE($8, workflow_state), tag = COALESCE($9, tag), updated_at = datetime('now', 'subsec')\n               WHERE id = $1 AND project_id = $2\n               RETURNING id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", task_type as \"task_type!: TaskType\", parent_workspace_id as \"parent_workspace_id: Uuid\", parent_task_id as \"parent_task_id: Uuid\", workflow_state as \"workflow_state!: WorkflowState\", tag as \"tag: TaskTag\", created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\", NULL as \"child_count: i64\"",
   "describe": {
     "columns": [
       {
@@ -62,6 +62,11 @@
         "name": "updated_at!: DateTime<Utc>",
         "ordinal": 11,
         "type_info": "Text"
+      },
+      {
+        "name": "child_count: i64",
+        "ordinal": 12,
+        "type_info": "Null"
       }
     ],
     "parameters": {
@@ -79,8 +84,9 @@
       false,
       true,
       false,
-      false
+      false,
+      null
     ]
   },
-  "hash": "9ebc76c1d191cdddf38d36ae37e6de36c45367619e1848de3deafcef1f9697fd"
+  "hash": "402023ca6a131e0ad5789a7f7c3d96480afe0433ca46fdedd8f462308724168d"
 }

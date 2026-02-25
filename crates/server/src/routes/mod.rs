@@ -5,6 +5,7 @@ use axum::{
 use tower_http::validate_request::ValidateRequestHeaderLayer;
 
 use crate::{DeploymentImpl, middleware};
+use crate::middleware::security_headers::add_security_headers;
 
 pub mod approvals;
 pub mod config;
@@ -58,5 +59,6 @@ pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
         .route("/", get(frontend::serve_frontend_root))
         .route("/{*path}", get(frontend::serve_frontend))
         .nest("/api", base_routes)
+        .layer(axum::middleware::from_fn(add_security_headers))
         .into_make_service()
 }

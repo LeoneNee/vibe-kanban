@@ -313,11 +313,21 @@ fn hash_sha256_hex(input: &str) -> String {
     output
 }
 
+fn html_escape(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#x27;")
+}
+
 fn simple_html_response(status: StatusCode, message: String) -> Response<String> {
+    let escaped_message = html_escape(&message);
     let body = format!(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>OAuth</title></head>\
          <body style=\"font-family: sans-serif; margin: 3rem;\"><h1>{}</h1></body></html>",
-        message
+        escaped_message
     );
     Response::builder()
         .status(status)
@@ -356,4 +366,48 @@ fn close_window_response(message: String) -> Response<String> {
         .header("content-type", "text/html; charset=utf-8")
         .body(body)
         .unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn html_escape_escapes_angle_brackets() {
+        let input = "<script>alert('xss')</script>";
+        let result = html_escape(input);
+        assert_eq!(result, "&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;");
+    }
+
+    #[test]
+    fn html_escape_escapes_ampersand() {
+        let input = "foo & bar";
+        let result = html_escape(input);
+        assert_eq!(result, "foo &amp; bar");
+    }
+
+    #[test]
+    fn html_escape_escapes_quotes() {
+        let input = r#"he said "hello""#;
+        let result = html_escape(input);
+        assert_eq!(result, "he said &quot;hello&quot;");
+    }
+
+    #[test]
+    fn html_escape_preserves_safe_text() {
+        let input = "OAuth authorization failed: invalid_grant";
+        let result = html_escape(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn simple_html_response_escapes_message() {
+        let response = simple_html_response(
+            StatusCode::BAD_REQUEST,
+            "<img src=x onerror=alert(1)>".to_string(),
+        );
+        let body = response.into_body();
+        assert!(!body.contains("<img"));
+        assert!(body.contains("&lt;img"));
+    }
 }

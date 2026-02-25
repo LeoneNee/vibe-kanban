@@ -80,7 +80,7 @@ impl DBService {
         );
         let options = SqliteConnectOptions::from_str(&database_url)?
             .create_if_missing(true)
-            .journal_mode(SqliteJournalMode::Delete);
+            .journal_mode(SqliteJournalMode::Wal);
         let pool = SqlitePool::connect_with(options).await?;
         run_migrations(&pool).await?;
         Ok(DBService { pool })
@@ -116,7 +116,7 @@ impl DBService {
         );
         let options = SqliteConnectOptions::from_str(&database_url)?
             .create_if_missing(true)
-            .journal_mode(SqliteJournalMode::Delete);
+            .journal_mode(SqliteJournalMode::Wal);
 
         let pool = if let Some(hook) = after_connect {
             SqlitePoolOptions::new()
@@ -135,5 +135,34 @@ impl DBService {
 
         run_migrations(&pool).await?;
         Ok(pool)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use sqlx::{SqlitePool, sqlite::{SqliteConnectOptions, SqliteJournalMode}};
+
+    #[tokio::test]
+    async fn database_uses_wal_journal_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.sqlite");
+        let url = format!("sqlite://{}", db_path.display());
+
+        let options = SqliteConnectOptions::from_str(&url)
+            .unwrap()
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal);
+
+        let pool = SqlitePool::connect_with(options).await.unwrap();
+
+        let row: (String,) = sqlx::query_as("PRAGMA journal_mode")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        assert_eq!(row.0.to_lowercase(), "wal");
+        pool.close().await;
     }
 }

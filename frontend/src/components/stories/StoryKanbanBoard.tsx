@@ -9,7 +9,7 @@ import {
 import type { Task } from 'shared/types';
 import { StoryCard } from './StoryCard';
 
-export type StoryKanbanColumns = Record<'backlog' | 'inprogress' | 'done', Task[]>;
+export type StoryKanbanColumns = Record<'backlog' | 'inprogress' | 'done' | 'cancelled', Task[]>;
 
 interface StoryKanbanBoardProps {
   columns: StoryKanbanColumns;
@@ -21,10 +21,14 @@ interface StoryKanbanBoardProps {
   projectId: string;
 }
 
-const columnMeta: Record<keyof StoryKanbanColumns, { name: string; color: string; id: 'todo' | 'inprogress' | 'done' }> = {
+const columnMeta: Record<
+  keyof StoryKanbanColumns,
+  { name: string; color: string; id: 'todo' | 'inprogress' | 'done' | 'cancelled' }
+> = {
   backlog: { name: 'Backlog', color: '--neutral-foreground', id: 'todo' },
   inprogress: { name: 'In Progress', color: '--info', id: 'inprogress' },
   done: { name: 'Done', color: '--success', id: 'done' },
+  cancelled: { name: 'Cancelled', color: '--muted-foreground', id: 'cancelled' },
 };
 
 function StoryKanbanBoard({

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { KanbanCard } from '@/components/ui/shadcn-io/kanban';
 import { FileText } from 'lucide-react';
 import type { Task, TaskWithAttemptStatus } from 'shared/types';
@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { TaskCardHeader } from '../tasks/TaskCardHeader';
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
-import { tasksApi } from '@/lib/api';
 
 interface StoryCardProps {
   task: Task;
@@ -16,7 +15,8 @@ interface StoryCardProps {
   onViewDetails: (task: Task) => void;
   onViewDoc?: (task: Task) => void;
   isOpen?: boolean;
-  projectId: string;
+  /** @deprecated child_count is now included in the task object from the API */
+  projectId?: string;
 }
 
 export function StoryCard({
@@ -26,29 +26,17 @@ export function StoryCard({
   onViewDetails,
   onViewDoc,
   isOpen,
-  projectId,
 }: StoryCardProps) {
   // Import translation hook as required
   useTranslation('tasks');
 
-  const [childCount, setChildCount] = useState<number>(0);
+  const childCount = Number(task.child_count ?? 0);
 
   const handleClick = useCallback(() => {
     onViewDetails(task);
   }, [task, onViewDetails]);
 
   const localRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    tasksApi
-      .list({
-        projectId,
-        taskType: 'task',
-        parentTaskId: task.id,
-      })
-      .then((children) => setChildCount(children.length))
-      .catch(console.error);
-  }, [task.id, projectId]);
 
   useEffect(() => {
     if (!isOpen || !localRef.current) return;

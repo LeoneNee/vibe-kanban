@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", task_type as \"task_type!: TaskType\", parent_workspace_id as \"parent_workspace_id: Uuid\", parent_task_id as \"parent_task_id: Uuid\", workflow_state as \"workflow_state!: WorkflowState\", tag as \"tag: TaskTag\", created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks\n               WHERE parent_workspace_id = $1\n               ORDER BY created_at DESC",
+  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", task_type as \"task_type!: TaskType\", parent_workspace_id as \"parent_workspace_id: Uuid\", parent_task_id as \"parent_task_id: Uuid\", workflow_state as \"workflow_state!: WorkflowState\", tag as \"tag: TaskTag\", created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\", NULL as \"child_count: i64\"\n               FROM tasks\n               WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -62,6 +62,11 @@
         "name": "updated_at!: DateTime<Utc>",
         "ordinal": 11,
         "type_info": "Text"
+      },
+      {
+        "name": "child_count: i64",
+        "ordinal": 12,
+        "type_info": "Null"
       }
     ],
     "parameters": {
@@ -79,8 +84,9 @@
       false,
       true,
       false,
-      false
+      false,
+      null
     ]
   },
-  "hash": "d8ef221ec4f18a0487b29173af061ecd435fb1098bf47505d3e44fc8a18b852e"
+  "hash": "13da08952c27715058f60014f016a740be0093498a5ee26342b889840b1de299"
 }
