@@ -49,6 +49,7 @@ echo "🔨 Building frontend..."
 (cd frontend && npm run build)
 
 echo "🔨 Building Rust binaries..."
+export PATH="$(dirname $(rustup which rustc)):$PATH"
 cargo build --release --manifest-path Cargo.toml
 cargo build --release --bin mcp_task_server --manifest-path Cargo.toml
 

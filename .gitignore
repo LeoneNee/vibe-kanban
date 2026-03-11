@@ -88,3 +88,9 @@ vibe-kanban-cloud/
 
 # Git worktrees
 .worktrees/
+
+# Claude Code
+.claude/
+
+# pnpm store
+.pnpm-store/

@@ -322,9 +322,11 @@ fn fetch_with_missing_ref_returns_error() {
     let result = git_cli.fetch_with_refspec(&local_path, remote_url, refspec);
     match result {
         Err(GitCliError::CommandFailed(msg)) => {
+            let msg_lower = msg.to_ascii_lowercase();
+            // Support both English and Chinese error messages
             assert!(
-                msg.to_ascii_lowercase()
-                    .contains("couldn't find remote ref"),
+                msg_lower.contains("couldn't find remote ref")
+                    || msg_lower.contains("无法找到远程引用"),
                 "unexpected stderr: {msg}"
             );
         }
